@@ -72,6 +72,31 @@ function toError(value: unknown): Error {
  * within the same task (a move, or a framework's disconnect/reconnect), the
  * sky is then disposed and its WebGL context freed; a later insertion starts
  * a new one.
+ *
+ * @tagname skye-view
+ * @attr {"clear" | "cloudy" | "fog" | "rainy" | "storm" | "sleet" | "snowy" | "haze"} [scene=cloudy] - Weather scene; unknown names are `cloudy`.
+ * @attr {number} [cover=0.4] - Cloud cover, clamped to 0-1.
+ * @attr {number} [intensity=0.6] - Precipitation, fog or haze strength, clamped to 0-1.
+ * @attr {number} [wind] - Cloud wind speed; absent is the scene's own wind, scaled by intensity.
+ * @attr {number} [seed=0] - Cloud pattern seed.
+ * @attr {number} [hour=17.5] - Local clock hour, read against `solar-noon`; wraps into 0-24.
+ * @attr {number} [latitude=52.37] - Degrees north, clamped to -66-66.
+ * @attr {number} [day-of-year=172] - Day of the year, 1-366.
+ * @attr {number} [solar-noon=12.7] - Local hour of solar noon.
+ * @attr {number} [moon-phase=0.5] - Moon phase; wraps into 0-1. 0 is new, 0.5 is full.
+ * @attr {string} [glass=on] - Rain-on-glass layer: off for `0`, `false`, `off` or `none` in any case, on for any other value.
+ * @attr {number} [focus-depth=0.45] - Glass focus depth, clamped to 0.12-1.
+ * @attr {number} [exposure=1] - Overall brightness, clamped to 0.2-1.2.
+ * @attr {number} [blur-radius=0] - Background blur in CSS px, clamped to 0-64.
+ * @attr {"auto" | "low" | "balanced" | "high"} [quality=auto] - Quality tier; `auto` adapts to frame time, unknown values are `balanced`.
+ * @attr {"auto" | "full" | "static"} [motion=auto] - `static` draws one frame per change; `auto` follows prefers-reduced-motion.
+ * @attr {boolean | string} worker - Render in a dedicated worker; a non-empty value is the URL of the worker module to load instead of skye's own.
+ * @fires {CustomEvent<null>} skye-ready - Programs are linked and the sky is drawing.
+ * @fires {CustomEvent<Error>} skye-error - The sky failed; `detail` is the error. The fallback gradient stays.
+ * @fires {CustomEvent<null>} skye-contextlost - The WebGL context was lost; drawing stopped.
+ * @fires {CustomEvent<null>} skye-contextrestored - Drawing again after a context loss.
+ * @fires {CustomEvent<null>} skye-fallback - WebGL2 is unavailable; the fallback gradient is shown for good.
+ * @fires {CustomEvent<TierChange>} skye-tierchange - The automatic quality tier changed; `detail` is the new tier.
  */
 export class SkyeElement extends ElementBase {
   /**
@@ -111,7 +136,8 @@ export class SkyeElement extends ElementBase {
   #cancelStart: (() => void) | undefined;
   #teardown: ReturnType<typeof setTimeout> | undefined;
   #restore: ReturnType<typeof setTimeout> | undefined;
-  #reveal: number | undefined;
+  /** Cancels the pending reveal. */
+  #reveal: (() => void) | undefined;
   /** The host's sky has linked its programs and its context is not lost. */
   #ready = false;
   /** The host replaces one lost to a context loss; its ready means restored. */
@@ -275,7 +301,7 @@ export class SkyeElement extends ElementBase {
   }
 
   #showCover(): void {
-    if (this.#reveal !== undefined) cancelAnimationFrame(this.#reveal);
+    this.#reveal?.();
     this.#reveal = undefined;
     this.#cover.style.background = fallbackBackground(this.#params());
     this.#cover.hidden = false;
@@ -304,14 +330,15 @@ export class SkyeElement extends ElementBase {
       this.#width > 0 &&
       this.#height > 0;
     host.setVisible(visible);
-    if (visible && this.#ready && !this.#cover.hidden) this.#scheduleReveal();
+    if (visible && this.#ready && !this.#cover.hidden) this.#scheduleReveal(host);
   }
 
-  // The sky requests its frame before announcing a change, so a frame callback requested after it runs in the
-  // same frame: the gradient goes away in the frame the sky first draws, never over a blank canvas.
-  #scheduleReveal(): void {
+  // Called right after the sky is told it is visible or announces that it draws, so the gradient goes away once the
+  // canvas shows the frame that follows, never over a blank canvas. A worker's frame shows later than the page's
+  // own, so the host decides when.
+  #scheduleReveal(host: SkyHost): void {
     if (this.#reveal !== undefined) return;
-    this.#reveal = requestAnimationFrame(() => {
+    this.#reveal = host.afterFrame(() => {
       this.#reveal = undefined;
       this.#cover.hidden = true;
     });

@@ -31,16 +31,16 @@ export class Gpu {
   readonly float: boolean;
   /** `KHR_parallel_shader_compile`, when present. */
   readonly parallel: KHR_parallel_shader_compile | null;
-  private readonly buffers: WebGLBuffer[] = [];
-  private readonly fullscreen: WebGLVertexArrayObject;
-  private readonly quad: WebGLVertexArrayObject;
+  readonly #buffers: WebGLBuffer[] = [];
+  readonly #fullscreen: WebGLVertexArrayObject;
+  readonly #quad: WebGLVertexArrayObject;
 
   constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
     this.float = gl.getExtension("EXT_color_buffer_float") !== null;
     this.parallel = gl.getExtension("KHR_parallel_shader_compile");
-    this.fullscreen = this.vertexArray(FULLSCREEN_TRIANGLE);
-    this.quad = this.vertexArray(UNIT_QUAD);
+    this.#fullscreen = this.#vertexArray(FULLSCREEN_TRIANGLE);
+    this.#quad = this.#vertexArray(UNIT_QUAD);
   }
 
   /** Compiles and links a program; with parallel compile the link status is read later. */
@@ -74,12 +74,12 @@ export class Gpu {
   // Vertex arrays are bound on every draw rather than cached: a cache goes stale as soon as anything else
   // binds one on this context, such as page code holding the same canvas's context.
   drawFullscreen(): void {
-    this.gl.bindVertexArray(this.fullscreen);
+    this.gl.bindVertexArray(this.#fullscreen);
     this.gl.drawArrays(this.gl.TRIANGLES, 0, 3);
   }
 
   drawQuads(instances: number): void {
-    this.gl.bindVertexArray(this.quad);
+    this.gl.bindVertexArray(this.#quad);
     this.gl.drawArraysInstanced(this.gl.TRIANGLE_STRIP, 0, 4, instances);
   }
 
@@ -97,17 +97,17 @@ export class Gpu {
   dispose(): void {
     const gl = this.gl;
     gl.bindVertexArray(null);
-    gl.deleteVertexArray(this.fullscreen);
-    gl.deleteVertexArray(this.quad);
-    for (const b of this.buffers) gl.deleteBuffer(b);
+    gl.deleteVertexArray(this.#fullscreen);
+    gl.deleteVertexArray(this.#quad);
+    for (const b of this.#buffers) gl.deleteBuffer(b);
   }
 
-  private vertexArray(vertices: readonly number[]): WebGLVertexArrayObject {
+  #vertexArray(vertices: readonly number[]): WebGLVertexArrayObject {
     const gl = this.gl;
     const vao = gl.createVertexArray();
     gl.bindVertexArray(vao);
     const buffer = gl.createBuffer();
-    this.buffers.push(buffer);
+    this.#buffers.push(buffer);
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0);

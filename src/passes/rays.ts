@@ -23,16 +23,16 @@ export function raysActive(f: PassFrame): boolean {
 /** Pass 3: crepuscular rays gathered toward the sun at sky resolution, from the scene buffer's mips. */
 export class RaysPass {
   readonly program: Program;
-  private readonly u: ReturnType<typeof declareUniforms>;
+  readonly #u: ReturnType<typeof declareUniforms>;
 
   constructor(gpu: Gpu) {
     this.program = gpu.program(FULLSCREEN_VS, RAYS_FS);
-    this.u = declareUniforms(this.program);
+    this.#u = declareUniforms(this.program);
   }
 
   draw(gpu: Gpu, f: PassFrame, scene: Target, out: Target): void {
     const { state: s, layout: l, tier: q } = f;
-    const u = this.u;
+    const u = this.#u;
     this.program.use();
     gpu.bindOutput(out, l.skyWidth, l.skyHeight);
     gpu.bindTexture(0, scene);

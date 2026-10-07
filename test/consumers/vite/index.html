@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>skye in a Vite app</title>
+    <link rel="icon" href="data:," />
+    <style>
+      .box {
+        position: relative;
+        width: 320px;
+        height: 120px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <skye-view id="worker" worker scene="storm" hour="20" motion="static"></skye-view>
+    </div>
+    <div class="box">
+      <skye-view id="custom" scene="snowy" hour="10" motion="static"></skye-view>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

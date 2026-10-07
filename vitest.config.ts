@@ -30,7 +30,8 @@ const config: ViteUserConfig = defineConfig({
           name: "unit",
           environment: "node",
           include: ["src/**/*.test.{ts,tsx}", "scripts/**/*.test.ts", "test/**/*.test.ts"],
-          exclude: ["**/*.browser.test.*", "**/node_modules/**"],
+          // test/consumers runs against the packed package, after a build: `bun run test:consumers`.
+          exclude: ["**/*.browser.test.*", "**/node_modules/**", "test/consumers/**"],
         },
       },
       {

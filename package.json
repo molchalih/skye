@@ -5,20 +5,60 @@
   "description": "A zero-dependency WebGL2 sky renderer",
   "license": "MIT",
   "type": "module",
-  "packageManager": "bun@1.4.2",
-  "engines": {
-    "bun": "1.4.2"
+  "sideEffects": [
+    "./dist/define.js"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./astro": {
+      "types": "./dist/astro.d.ts",
+      "default": "./dist/astro.js"
+    },
+    "./element": {
+      "types": "./dist/element.d.ts",
+      "default": "./dist/element.js"
+    },
+    "./define": {
+      "types": "./dist/define.d.ts",
+      "default": "./dist/define.js"
+    },
+    "./worker": {
+      "types": "./dist/worker.d.ts",
+      "default": "./dist/worker.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "default": "./dist/react.js"
+    },
+    "./custom-elements.json": "./custom-elements.json",
+    "./package.json": "./package.json"
   },
+  "customElements": "custom-elements.json",
+  "files": [
+    "dist",
+    "custom-elements.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "packageManager": "bun@1.4.2",
   "scripts": {
-    "check": "bun run lint && bun run typecheck && bun run format:check && bun run test",
+    "check": "bun run lint && bun run typecheck && bun run format:check && bun run test && bun run build && bun run check:package && bun run test:consumers && bun run size",
     "shaders": "bun scripts/shaders.ts",
+    "build": "bun run shaders && tsdown && cem analyze --quiet",
+    "prepack": "bun run build",
+    "check:package": "publint --strict && attw --pack . --profile esm-only",
+    "size": "size-limit",
     "lint": "bun run shaders && oxlint --type-aware",
     "typecheck": "bun run shaders && tsc -b",
     "format": "bun scripts/format.ts --write",
     "format:check": "bun scripts/format.ts --check",
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
-    "test:browser": "vitest run --project browser --project browser-worker"
+    "test:browser": "vitest run --project browser --project browser-worker",
+    "test:consumers": "vitest run --config test/consumers/vitest.config.ts"
   },
   "peerDependencies": {
     "react": ">=19"
@@ -29,6 +69,9 @@
     }
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.5",
+    "@custom-elements-manifest/analyzer": "0.11.0",
+    "@size-limit/preset-small-lib": "14.1.0",
     "@types/node": "26.6.4",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
@@ -37,8 +80,12 @@
     "oxlint-tsgolint": "7.0.2003",
     "playwright": "1.63.0",
     "prettier": "3.9.9",
+    "publint": "0.3.25",
     "react-dom": "19.3.0",
+    "size-limit": "14.1.0",
+    "tsdown": "0.23.0",
     "typescript": "7.0.2",
+    "vite": "8.3.3",
     "vitest": "5.0.3"
   }
 }

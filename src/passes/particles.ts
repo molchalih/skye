@@ -33,11 +33,11 @@ const DUST = 2;
 /** Pass 2b: rain streaks, snow flakes and dust motes as instanced quads blended over the scene buffer. */
 export class ParticlesPass {
   readonly program: Program;
-  private readonly u: ReturnType<typeof declareUniforms>;
+  readonly #u: ReturnType<typeof declareUniforms>;
 
   constructor(gpu: Gpu) {
     this.program = gpu.program(PARTICLES_VS, PARTICLES_FS);
-    this.u = declareUniforms(this.program);
+    this.#u = declareUniforms(this.program);
   }
 
   draw(gpu: Gpu, f: PassFrame, out: Target): void {
@@ -48,7 +48,7 @@ export class ParticlesPass {
     const snow = s.snow > 0.02 ? Math.round(q.snow * l.particleScale * s.snow * precip) : -1;
     const dust = s.dust > 0.02 ? Math.round(q.dust * l.particleScale * s.dust) : -1;
     if (rain < 0 && snow < 0 && dust < 0) return;
-    const u = this.u;
+    const u = this.#u;
     this.program.use();
     gpu.bindOutput(out, l.sceneWidth, l.sceneHeight);
     gpu.blend(true);
@@ -67,15 +67,15 @@ export class ParticlesPass {
     u.uZenith.vec3(s.zenith[0], s.zenith[1], s.zenith[2]);
     u.uLCol.vec3(s.lightColor[0], s.lightColor[1], s.lightColor[2]);
     u.uLPos.vec2(s.lightPos[0], s.lightPos[1]);
-    if (rain >= 0) this.drawMode(gpu, RAIN, rain);
-    if (snow >= 0) this.drawMode(gpu, SNOW, snow);
-    if (dust >= 0) this.drawMode(gpu, DUST, dust);
+    if (rain >= 0) this.#drawMode(gpu, RAIN, rain);
+    if (snow >= 0) this.#drawMode(gpu, SNOW, snow);
+    if (dust >= 0) this.#drawMode(gpu, DUST, dust);
     gpu.blend(false);
     f.passes++;
   }
 
-  private drawMode(gpu: Gpu, mode: number, count: number): void {
-    this.u.uMode.float(mode);
+  #drawMode(gpu: Gpu, mode: number, count: number): void {
+    this.#u.uMode.float(mode);
     gpu.drawQuads(Math.max(1, count));
   }
 }

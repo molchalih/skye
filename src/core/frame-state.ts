@@ -270,36 +270,36 @@ function newSolarPosition(): SolarPosition {
  * quantised to quarter seconds, so the glass fade steps at that rate too.
  */
 export class SceneModel {
-  private readonly state = createFrameState();
-  private readonly scratchA: Vec3 = [0, 0, 0];
-  private readonly scratchB: Vec3 = [0, 0, 0];
-  private readonly sunPosition = newSolarPosition();
-  private readonly moonPosition = newSolarPosition();
-  private valid = false;
-  private sceneName: SceneName | "" = "";
-  private sceneT = 0;
+  readonly #state = createFrameState();
+  readonly #scratchA: Vec3 = [0, 0, 0];
+  readonly #scratchB: Vec3 = [0, 0, 0];
+  readonly #sunPosition = newSolarPosition();
+  readonly #moonPosition = newSolarPosition();
+  #valid = false;
+  #sceneName: SceneName | "" = "";
+  #sceneT = 0;
   // The cache key, field by field (v6 joins these into a string).
-  private kScene: SceneName = "cloudy";
-  private kHour = 0;
-  private kCover = 0;
-  private kIntensity = 0;
-  private kSeed = 0;
-  private kGlass = false;
-  private kFocus = 0;
-  private kWind: number | undefined = undefined;
-  private kExposure = 0;
-  private kBlur = 0;
-  private kLatitude = 0;
-  private kDay = 0;
-  private kNoon = 0;
-  private kMoon = 0;
-  private kAspect = 0;
-  private kSceneT = 0;
-  private kTick = 0;
+  #kScene: SceneName = "cloudy";
+  #kHour = 0;
+  #kCover = 0;
+  #kIntensity = 0;
+  #kSeed = 0;
+  #kGlass = false;
+  #kFocus = 0;
+  #kWind: number | undefined = undefined;
+  #kExposure = 0;
+  #kBlur = 0;
+  #kLatitude = 0;
+  #kDay = 0;
+  #kNoon = 0;
+  #kMoon = 0;
+  #kAspect = 0;
+  #kSceneT = 0;
+  #kTick = 0;
 
   /** Forces the next `target` call to recompute (v6 `_envKey = ''`). */
   invalidate(): void {
-    this.valid = false;
+    this.#valid = false;
   }
 
   /**
@@ -310,58 +310,58 @@ export class SceneModel {
    */
   target(params: ResolvedParams, t: number, aspect: number, isStatic: boolean): FrameState {
     const scene = params.scene;
-    if (scene !== this.sceneName) {
-      this.sceneName = scene;
-      this.sceneT = isStatic ? t - STATIC_SCENE_LEAD_S : t;
+    if (scene !== this.#sceneName) {
+      this.#sceneName = scene;
+      this.#sceneT = isStatic ? t - STATIC_SCENE_LEAD_S : t;
     }
     // v6 keys on the aspect rounded to four decimals. A NaN aspect never equals the stored key, so it recomputes every call (uncached but correct).
     const asp = Math.round(aspect * 1e4) / 1e4;
     const tick = Math.floor(t * 4);
     if (
-      !this.valid ||
-      scene !== this.kScene ||
-      params.hour !== this.kHour ||
-      params.cover !== this.kCover ||
-      params.intensity !== this.kIntensity ||
-      params.seed !== this.kSeed ||
-      params.glass !== this.kGlass ||
-      params.focus !== this.kFocus ||
-      params.wind !== this.kWind ||
-      params.exposure !== this.kExposure ||
-      params.blur !== this.kBlur ||
-      params.latitude !== this.kLatitude ||
-      params.dayOfYear !== this.kDay ||
-      params.solarNoon !== this.kNoon ||
-      params.moonPhase !== this.kMoon ||
-      asp !== this.kAspect ||
-      this.sceneT !== this.kSceneT ||
-      tick !== this.kTick
+      !this.#valid ||
+      scene !== this.#kScene ||
+      params.hour !== this.#kHour ||
+      params.cover !== this.#kCover ||
+      params.intensity !== this.#kIntensity ||
+      params.seed !== this.#kSeed ||
+      params.glass !== this.#kGlass ||
+      params.focus !== this.#kFocus ||
+      params.wind !== this.#kWind ||
+      params.exposure !== this.#kExposure ||
+      params.blur !== this.#kBlur ||
+      params.latitude !== this.#kLatitude ||
+      params.dayOfYear !== this.#kDay ||
+      params.solarNoon !== this.#kNoon ||
+      params.moonPhase !== this.#kMoon ||
+      asp !== this.#kAspect ||
+      this.#sceneT !== this.#kSceneT ||
+      tick !== this.#kTick
     ) {
-      this.kScene = scene;
-      this.kHour = params.hour;
-      this.kCover = params.cover;
-      this.kIntensity = params.intensity;
-      this.kSeed = params.seed;
-      this.kGlass = params.glass;
-      this.kFocus = params.focus;
-      this.kWind = params.wind;
-      this.kExposure = params.exposure;
-      this.kBlur = params.blur;
-      this.kLatitude = params.latitude;
-      this.kDay = params.dayOfYear;
-      this.kNoon = params.solarNoon;
-      this.kMoon = params.moonPhase;
-      this.kAspect = asp;
-      this.kSceneT = this.sceneT;
-      this.kTick = tick;
-      this.compute(params, t, aspect);
-      this.valid = true;
+      this.#kScene = scene;
+      this.#kHour = params.hour;
+      this.#kCover = params.cover;
+      this.#kIntensity = params.intensity;
+      this.#kSeed = params.seed;
+      this.#kGlass = params.glass;
+      this.#kFocus = params.focus;
+      this.#kWind = params.wind;
+      this.#kExposure = params.exposure;
+      this.#kBlur = params.blur;
+      this.#kLatitude = params.latitude;
+      this.#kDay = params.dayOfYear;
+      this.#kNoon = params.solarNoon;
+      this.#kMoon = params.moonPhase;
+      this.#kAspect = asp;
+      this.#kSceneT = this.#sceneT;
+      this.#kTick = tick;
+      this.#compute(params, t, aspect);
+      this.#valid = true;
     }
-    return this.state;
+    return this.#state;
   }
 
-  private compute(params: ResolvedParams, t: number, aspect: number): void {
-    const s = this.state;
+  #compute(params: ResolvedParams, t: number, aspect: number): void {
+    const s = this.#state;
     const sc = SCENES[params.scene];
     const rainW = sc.rain ?? 0;
     const snowW = sc.snow ?? 0;
@@ -388,14 +388,14 @@ export class SceneModel {
       params.dayOfYear,
       params.hour,
       params.solarNoon,
-      this.sunPosition,
+      this.#sunPosition,
     );
     const moon = solarPosition(
       params.latitude,
       params.dayOfYear,
       params.hour - moonPh * 24,
       params.solarNoon,
-      this.moonPosition,
+      this.#moonPosition,
     );
     const el = sun.sinElevation;
     const dl = smoothstep(-0.12, 0.25, el);
@@ -414,8 +414,8 @@ export class SceneModel {
     const moonUp =
       smoothstep(-0.05, 0.1, moon.sinElevation) * night * smoothstep(0.02, 0.12, moonIllum);
 
-    const a = this.scratchA;
-    const b = this.scratchB;
+    const a = this.#scratchA;
+    const b = this.#scratchB;
     const sunCol = s.sunColor;
     const elSun = smoothstep(0, 0.35, el);
     mixVec3(sunCol, SUN_LOW, SUN_HIGH, elSun);
@@ -460,7 +460,7 @@ export class SceneModel {
     mixVec3(s.lightColor, a, b, w);
 
     const exposure = weatherExposure(night, inten, rainW, snowW, fogW, hz, storm);
-    const since = t - this.sceneT;
+    const since = t - this.#sceneT;
     const glassRain = rainW && glass ? smoothstep(0, 8, since) * mix(0.3, 1, inten) * rainW : 0;
     const glassFrost =
       snowW && glass ? smoothstep(0, 12, since) * mix(0.15, 0.75, inten) * snowW : 0;

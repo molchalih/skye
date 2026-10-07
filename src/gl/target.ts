@@ -15,14 +15,14 @@ export class Target {
   readonly framebuffer: WebGLFramebuffer;
   width = 0;
   height = 0;
-  private readonly gl: WebGL2RenderingContext;
-  private readonly kind: TargetKind;
-  private readonly float: boolean;
+  readonly #gl: WebGL2RenderingContext;
+  readonly #kind: TargetKind;
+  readonly #float: boolean;
 
   constructor(gl: WebGL2RenderingContext, kind: TargetKind, float: boolean, mipmapped: boolean) {
-    this.gl = gl;
-    this.kind = kind;
-    this.float = float;
+    this.#gl = gl;
+    this.#kind = kind;
+    this.#float = float;
     const t = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, t);
     gl.texParameteri(
@@ -41,25 +41,24 @@ export class Target {
     this.framebuffer = fb;
   }
 
-  /** Allocates `width` x `height` storage unless the size is unchanged. Returns whether it reallocated. */
-  resize(width: number, height: number): boolean {
-    if (this.width === width && this.height === height) return false;
-    const gl = this.gl;
+  /** Allocates `width` x `height` storage unless the size is unchanged. */
+  resize(width: number, height: number): void {
+    if (this.width === width && this.height === height) return;
+    const gl = this.#gl;
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
-    if (this.kind === "hdr" && this.float) {
+    if (this.#kind === "hdr" && this.#float) {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, width, height, 0, gl.RGBA, gl.HALF_FLOAT, null);
-    } else if (this.kind === "r8") {
+    } else if (this.#kind === "r8") {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, width, height, 0, gl.RED, gl.UNSIGNED_BYTE, null);
     } else {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
     }
     this.width = width;
     this.height = height;
-    return true;
   }
 
   dispose(): void {
-    this.gl.deleteFramebuffer(this.framebuffer);
-    this.gl.deleteTexture(this.texture);
+    this.#gl.deleteFramebuffer(this.framebuffer);
+    this.#gl.deleteTexture(this.texture);
   }
 }

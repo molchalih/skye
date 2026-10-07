@@ -1,0 +1,6 @@
+{
+  "name": "skye-consumers",
+  "private": true,
+  "type": "module",
+  "description": "Apps that use skye as its users do. `bun run test:consumers` packs skye and unpacks the tarball into node_modules/skye here."
+}

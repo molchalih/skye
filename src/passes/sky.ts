@@ -48,16 +48,16 @@ function declareUniforms(p: Program) {
 /** Pass 1: gradients, glows, Milky Way, cloud sheets, fog, rainbow and bolt glow into the small HDR sky buffer. */
 export class SkyPass {
   readonly program: Program;
-  private readonly u: ReturnType<typeof declareUniforms>;
+  readonly #u: ReturnType<typeof declareUniforms>;
 
   constructor(gpu: Gpu) {
     this.program = gpu.program(FULLSCREEN_VS, SKY_FS);
-    this.u = declareUniforms(this.program);
+    this.#u = declareUniforms(this.program);
   }
 
   draw(gpu: Gpu, f: PassFrame, out: Target): void {
     const { state: s, layout: l, tier: q, bolt: b } = f;
-    const u = this.u;
+    const u = this.#u;
     this.program.use();
     gpu.bindOutput(out, l.skyWidth, l.skyHeight);
     gpu.blend(false);

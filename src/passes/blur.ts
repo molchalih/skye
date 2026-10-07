@@ -22,18 +22,18 @@ function declareUniforms(p: Program) {
  */
 export class BlurPass {
   readonly program: Program;
-  private readonly u: ReturnType<typeof declareUniforms>;
-  private readonly kernel = createBlurKernel();
+  readonly #u: ReturnType<typeof declareUniforms>;
+  readonly #kernel = createBlurKernel();
 
   constructor(gpu: Gpu) {
     this.program = gpu.program(FULLSCREEN_VS, BLUR_FS);
-    this.u = declareUniforms(this.program);
+    this.#u = declareUniforms(this.program);
   }
 
   /** `a` holds the glass output; `b` is scratch. The result lands on the canvas. */
   draw(gpu: Gpu, f: PassFrame, a: Target, b: Target): void {
     const l = f.layout;
-    const u = this.u;
+    const u = this.#u;
     const bw = l.blurWidth;
     const bh = l.blurHeight;
     let src = a;
@@ -65,7 +65,7 @@ export class BlurPass {
         f.passes++;
       }
     }
-    const k = blurKernel(l.sigma, this.kernel);
+    const k = blurKernel(l.sigma, this.#kernel);
     const tx = 1 / src.width;
     const ty = 1 / src.height;
     u.uSub.vec2(bw / src.width, bh / src.height);

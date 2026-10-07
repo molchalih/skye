@@ -29,16 +29,16 @@ function declareUniforms(p: Program) {
 /** Pass 2: upsamples the sky buffer and adds moon, stars, meteors, sun disc and bolt core at scene resolution. */
 export class CompositePass {
   readonly program: Program;
-  private readonly u: ReturnType<typeof declareUniforms>;
+  readonly #u: ReturnType<typeof declareUniforms>;
 
   constructor(gpu: Gpu) {
     this.program = gpu.program(FULLSCREEN_VS, COMPOSITE_FS);
-    this.u = declareUniforms(this.program);
+    this.#u = declareUniforms(this.program);
   }
 
   draw(gpu: Gpu, f: PassFrame, sky: Target, out: Target): void {
     const { state: s, layout: l, bolt: b } = f;
-    const u = this.u;
+    const u = this.#u;
     this.program.use();
     gpu.bindOutput(out, l.sceneWidth, l.sceneHeight);
     gpu.bindTexture(0, sky);

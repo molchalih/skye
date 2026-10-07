@@ -32,94 +32,94 @@ export class FrameLoop {
   fps = 0;
   /** Smoothed CPU ms per animated frame; -1 until one is drawn. */
   cpuMs = -1;
-  private readonly client: LoopClient;
-  private rafId: number | undefined;
-  private timeoutId: ReturnType<typeof setTimeout> | undefined;
-  private hasOrigin = false;
-  private origin = 0;
-  private hasLast = false;
-  private last = 0;
-  private fpsCount = 0;
-  private hasFpsStart = false;
-  private fpsStart = 0;
+  readonly #client: LoopClient;
+  #rafId: number | undefined;
+  #timeoutId: ReturnType<typeof setTimeout> | undefined;
+  #hasOrigin = false;
+  #origin = 0;
+  #hasLast = false;
+  #last = 0;
+  #fpsCount = 0;
+  #hasFpsStart = false;
+  #fpsStart = 0;
 
   constructor(client: LoopClient) {
-    this.client = client;
+    this.#client = client;
   }
 
   /** Requests a frame unless one is already pending. */
   wake(): void {
-    if (this.rafId === undefined && this.timeoutId === undefined) this.request();
+    if (this.#rafId === undefined && this.#timeoutId === undefined) this.#request();
   }
 
   /** Cancels the pending frame; the loop stays idle until the next `wake`. */
   sleep(): void {
-    if (this.rafId !== undefined) globalThis.cancelAnimationFrame(this.rafId);
-    clearTimeout(this.timeoutId);
-    this.rafId = undefined;
-    this.timeoutId = undefined;
+    if (this.#rafId !== undefined) globalThis.cancelAnimationFrame(this.#rafId);
+    clearTimeout(this.#timeoutId);
+    this.#rafId = undefined;
+    this.#timeoutId = undefined;
   }
 
   /** The next frame ignores the cap and reports an interval of 1/60 s, as after a v6 attribute change. */
   restart(): void {
-    this.hasLast = false;
+    this.#hasLast = false;
   }
 
-  private request(): void {
+  #request(): void {
     if (typeof globalThis.requestAnimationFrame === "function") {
-      this.rafId = globalThis.requestAnimationFrame(this.onFrame);
+      this.#rafId = globalThis.requestAnimationFrame(this.#onFrame);
     } else {
-      this.timeoutId = setTimeout(this.onTimeout, 1000 / this.client.fpsCap());
+      this.#timeoutId = setTimeout(this.#onTimeout, 1000 / this.#client.fpsCap());
     }
   }
 
-  private readonly onFrame = (now: number): void => {
-    this.rafId = undefined;
-    this.run(now);
+  readonly #onFrame = (now: number): void => {
+    this.#rafId = undefined;
+    this.#run(now);
   };
 
-  private readonly onTimeout = (): void => {
-    this.timeoutId = undefined;
-    this.run(performance.now());
+  readonly #onTimeout = (): void => {
+    this.#timeoutId = undefined;
+    this.#run(performance.now());
   };
 
-  private run(now: number): void {
-    const client = this.client;
+  #run(now: number): void {
+    const client = this.#client;
     if (!client.canDraw()) return;
-    if (!this.hasOrigin) {
-      this.origin = now;
-      this.hasOrigin = true;
+    if (!this.#hasOrigin) {
+      this.#origin = now;
+      this.#hasOrigin = true;
     }
-    const t = (now - this.origin) / 1000;
+    const t = (now - this.#origin) / 1000;
     if (client.isStatic()) {
       client.draw(t, 1 / 60);
       return;
     }
-    this.request();
+    this.#request();
     const cap = client.fpsCap();
-    if (this.hasLast && cap < 60 && now - this.last < 1000 / cap - 2) return;
-    const dt = this.hasLast ? Math.min(0.1, (now - this.last) / 1000) : 1 / 60;
-    this.last = now;
-    this.hasLast = true;
+    if (this.#hasLast && cap < 60 && now - this.#last < 1000 / cap - 2) return;
+    const dt = this.#hasLast ? Math.min(0.1, (now - this.#last) / 1000) : 1 / 60;
+    this.#last = now;
+    this.#hasLast = true;
     // The measured draw includes harvesting GPU timer results, which v6 did just after its measurement; the
     // difference is a few query reads.
     const c0 = performance.now();
     client.draw(t, dt);
     const cpu = performance.now() - c0;
     this.cpuMs = this.cpuMs < 0 ? cpu : this.cpuMs + (cpu - this.cpuMs) * 0.1;
-    this.countFrame(now);
+    this.#countFrame(now);
     client.paced(dt * 1000, cap);
   }
 
-  private countFrame(now: number): void {
-    this.fpsCount++;
-    if (!this.hasFpsStart) {
-      this.fpsStart = now;
-      this.hasFpsStart = true;
-    } else if (now - this.fpsStart > 1000) {
-      this.fps = Math.round((this.fpsCount * 1000) / (now - this.fpsStart));
-      this.fpsCount = 0;
-      this.fpsStart = now;
+  #countFrame(now: number): void {
+    this.#fpsCount++;
+    if (!this.#hasFpsStart) {
+      this.#fpsStart = now;
+      this.#hasFpsStart = true;
+    } else if (now - this.#fpsStart > 1000) {
+      this.fps = Math.round((this.#fpsCount * 1000) / (now - this.#fpsStart));
+      this.#fpsCount = 0;
+      this.#fpsStart = now;
     }
   }
 }

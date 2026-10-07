@@ -20,6 +20,7 @@
     "react-hooks/rules-of-hooks": "error",
     "react-hooks/exhaustive-deps": "error",
     "import/no-cycle": "error",
+    "import/no-unassigned-import": ["error", { "allow": ["skye/define", "skye/worker"] }],
     "no-console": "error",
     "react/react-in-jsx-scope": "off"
   },

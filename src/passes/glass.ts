@@ -34,11 +34,11 @@ function declareUniforms(p: Program) {
  */
 export class GlassPass {
   readonly program: Program;
-  private readonly u: ReturnType<typeof declareUniforms>;
+  readonly #u: ReturnType<typeof declareUniforms>;
 
   constructor(gpu: Gpu) {
     this.program = gpu.program(FULLSCREEN_VS, GLASS_FS);
-    this.u = declareUniforms(this.program);
+    this.#u = declareUniforms(this.program);
   }
 
   /**
@@ -49,7 +49,7 @@ export class GlassPass {
     const { state: s, layout: l } = f;
     const width = l.shrink ? l.blurWidth : l.canvasWidth;
     const height = l.shrink ? l.blurHeight : l.canvasHeight;
-    const u = this.u;
+    const u = this.#u;
     this.program.use();
     gpu.bindOutput(out, width, height);
     gpu.bindTexture(1, rays);

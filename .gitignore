@@ -6,4 +6,5 @@ coverage/
 test-results/
 .vitest/
 src/shaders/generated.ts
+custom-elements.json
 docs/

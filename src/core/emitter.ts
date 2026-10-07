@@ -27,8 +27,8 @@ function call<T>(listener: Listener<T>, payload: T): void {
  * caller.
  */
 export class Emitter<E> {
-  private listeners: { [K in keyof E]?: Set<Listener<E[K]>> } = {};
-  private latched: { [K in keyof E]?: { payload: E[K]; heard: boolean } } = {};
+  #listeners: { [K in keyof E]?: Set<Listener<E[K]>> } = {};
+  #latched: { [K in keyof E]?: { payload: E[K]; heard: boolean } } = {};
 
   /**
    * Adds a listener and returns the function that removes it. When `name` is
@@ -36,10 +36,10 @@ export class Emitter<E> {
    * unless it is removed first.
    */
   on<K extends keyof E>(name: K, listener: Listener<E[K]>): () => void {
-    const set: Set<Listener<E[K]>> = this.listeners[name] ?? new Set();
-    this.listeners[name] = set;
+    const set: Set<Listener<E[K]>> = this.#listeners[name] ?? new Set();
+    this.#listeners[name] = set;
     set.add(listener);
-    const latched = this.latched[name];
+    const latched = this.#latched[name];
     if (latched !== undefined) {
       queueMicrotask(() => {
         if (!set.has(listener)) return;
@@ -54,7 +54,7 @@ export class Emitter<E> {
 
   /** Calls every listener of `name` in subscription order. Returns whether there was one. */
   emit<K extends keyof E>(name: K, payload: E[K]): boolean {
-    const set = this.listeners[name];
+    const set = this.#listeners[name];
     if (set === undefined || set.size === 0) return false;
     for (const listener of set) call(listener, payload);
     return true;
@@ -63,25 +63,25 @@ export class Emitter<E> {
   /** Emits `payload` and keeps it, so listeners added later receive it too. */
   latch<K extends keyof E>(name: K, payload: E[K]): void {
     const latched = { payload, heard: false };
-    this.latched[name] = latched;
+    this.#latched[name] = latched;
     latched.heard = this.emit(name, payload);
   }
 
   /** Whether the latched payload of `name` has reached a listener, at latch time or by replay. */
   heard(name: keyof E): boolean {
-    return this.latched[name]?.heard === true;
+    return this.#latched[name]?.heard === true;
   }
 
   /** Whether `name` has a listener now. */
   listening(name: keyof E): boolean {
-    const set = this.listeners[name];
+    const set = this.#listeners[name];
     return set !== undefined && set.size > 0;
   }
 
   /** Drops every listener and latched payload; pending replays are cancelled. */
   clear(): void {
-    for (const name in this.listeners) this.listeners[name]?.clear();
-    this.listeners = {};
-    this.latched = {};
+    for (const name in this.#listeners) this.#listeners[name]?.clear();
+    this.#listeners = {};
+    this.#latched = {};
   }
 }
