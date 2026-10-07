@@ -1,0 +1,279 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f4f5f7;
+  --card: #fff;
+  --text: #14171c;
+  --muted: #5d6673;
+  --line: #dde1e7;
+  --ink: #1a2440;
+  --accent: #e8a43a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1218;
+    --card: #181c24;
+    --text: #e8ebf0;
+    --muted: #98a1ae;
+    --line: #2a303b;
+    --ink: #0a0d12;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font:
+    14px/1.45 system-ui,
+    sans-serif;
+}
+
+.page {
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 500;
+}
+
+.lede {
+  margin: 6px 0 0;
+  max-width: 640px;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+
+.controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.field select,
+.button {
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+}
+
+.button {
+  border-color: transparent;
+  background: var(--ink);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.bench {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 24px;
+  margin-top: 28px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .bench {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The stage keeps its true CSS size so the measurement is honest; --scale only changes how it is shown. */
+.stageBox {
+  position: relative;
+  width: calc(var(--stage-width) * var(--scale));
+  height: calc(var(--stage-height) * var(--scale));
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--ink);
+}
+
+.stage {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: calc(var(--stage-width) * 1px);
+  height: calc(var(--stage-height) * 1px);
+  transform: scale(var(--scale));
+  transform-origin: 0 0;
+}
+
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+}
+
+.mono {
+  font-family: ui-monospace, monospace;
+  white-space: nowrap;
+}
+
+.caption {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.tile,
+.table {
+  border-radius: 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+}
+
+.tile {
+  padding: 20px;
+}
+
+.tileTitle {
+  font-weight: 500;
+  margin-bottom: 12px;
+}
+
+.summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.stat {
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+
+.statLabel {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.statValue {
+  display: block;
+  margin-top: 6px;
+  font-size: 28px;
+  font-variant-numeric: tabular-nums;
+}
+
+.statUnit {
+  margin-left: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.statSub {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.status {
+  color: var(--muted);
+}
+
+.table {
+  margin-top: 24px;
+  overflow-x: auto;
+}
+
+.thead,
+.row {
+  display: grid;
+  grid-template-columns: 130px 110px 100px minmax(320px, 1fr) 80px 80px 60px 60px 100px;
+  gap: 8px;
+  padding: 9px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.thead {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.row {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.row .case {
+  font-weight: 600;
+}
+
+.row .buffers {
+  font-family: ui-monospace, monospace;
+  color: var(--muted);
+}
+
+.num {
+  text-align: right;
+}
+
+.markdown {
+  margin: 0;
+  padding: 0 20px 20px;
+  font-size: 12px;
+  overflow-x: auto;
+}
+
+.table .tileTitle {
+  padding: 16px 20px 0;
+  margin: 0 0 12px;
+}

@@ -47,6 +47,7 @@
   "scripts": {
     "check": "bun run lint && bun run typecheck && bun run format:check && bun run test && bun run build && bun run check:package && bun run test:consumers && bun run size",
     "shaders": "bun scripts/shaders.ts",
+    "bench": "bun run shaders && vite bench",
     "build": "bun run shaders && tsdown && cem analyze --quiet",
     "prepack": "bun run build",
     "check:package": "publint --strict && attw --pack . --profile esm-only",
@@ -54,6 +55,8 @@
     "lint": "bun run shaders && oxlint --type-aware",
     "typecheck": "bun run shaders && tsc -b",
     "format": "bun scripts/format.ts --write",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
     "format:check": "bun scripts/format.ts --check",
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
@@ -70,6 +73,7 @@
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
+    "@changesets/cli": "3.0.3",
     "@custom-elements-manifest/analyzer": "0.11.0",
     "@size-limit/preset-small-lib": "14.1.0",
     "@types/node": "26.6.4",
