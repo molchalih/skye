@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>skye bench</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./bench.css" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="head">
+        <div>
+          <h1 class="title">skye bench</h1>
+          <p class="lede" id="setup"></p>
+        </div>
+        <div class="controls">
+          <label class="field">
+            <span>Tiers</span>
+            <select id="tiers">
+              <option value="all">low, balanced, high, auto</option>
+              <option value="auto">auto only</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Rendering</span>
+            <select id="worker">
+              <option value="main">main thread</option>
+              <option value="worker">worker</option>
+            </select>
+          </label>
+          <button id="run" class="button" type="button">Run benchmark</button>
+        </div>
+      </header>
+      <section class="bench">
+        <div>
+          <div id="stageBox" class="stageBox"><div id="stage" class="stage"></div></div>
+          <div class="progress">
+            <span class="bar"><span id="fill" class="fill"></span></span>
+            <span id="progress" class="mono"></span>
+          </div>
+          <div id="case" class="mono caption"></div>
+        </div>
+        <div class="tile">
+          <div class="tileTitle">Summary</div>
+          <div id="summary" class="summary"></div>
+          <div id="status" class="status">Press Run to start</div>
+        </div>
+      </section>
+      <section class="table">
+        <div class="thead">
+          <span>Scene</span><span>Tier</span><span>Mode</span><span>Buffers</span>
+          <span class="num">GPU ms</span><span class="num">CPU ms</span><span class="num">fps</span
+          ><span class="num">drops</span><span class="num">Mpx / frame</span>
+        </div>
+        <div id="rows"></div>
+      </section>
+      <section class="table">
+        <div class="tileTitle">Markdown rows</div>
+        <pre id="markdown" class="mono markdown"></pre>
+      </section>
+    </main>
+    <script type="module" src="./bench.ts"></script>
+  </body>
+</html>

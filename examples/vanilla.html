@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>skye, plain HTML</title>
+    <link rel="icon" href="data:," />
+    <!--
+      Run `bun run build` first: the import map points at the built dist/.
+      Serve the repository root (for example `bunx vite .`) and open /examples/vanilla.html;
+      module imports do not work from a file:// URL.
+      A page that loads from a CDN maps "skye/define" to the CDN URL of dist/define.js instead.
+    -->
+    <script type="importmap">
+      { "imports": { "skye/define": "../dist/define.js" } }
+    </script>
+    <script type="module">
+      import "skye/define";
+
+      const sky = document.querySelector("skye-view");
+      const log = document.querySelector("#log");
+      const scene = document.querySelector("#scene");
+      const hour = document.querySelector("#hour");
+
+      sky.addEventListener("skye-ready", () => {
+        const { quality, out } = sky.stats();
+        log.textContent = `ready: tier ${quality}, ${out[0]}x${out[1]} px`;
+      });
+      sky.addEventListener("skye-tierchange", (event) => {
+        log.textContent = `tier changed to ${event.detail.quality}`;
+      });
+      sky.addEventListener("skye-fallback", () => {
+        log.textContent = "WebGL2 is unavailable: showing the gradient";
+      });
+
+      // Every param is an attribute; the next frame eases toward the new value.
+      scene.addEventListener("change", () => sky.setAttribute("scene", scene.value));
+      hour.addEventListener("input", () => sky.setAttribute("hour", hour.value));
+    </script>
+    <style>
+      body {
+        margin: 0;
+        font:
+          14px/1.4 system-ui,
+          sans-serif;
+      }
+      .stage {
+        position: relative;
+        height: 60vh;
+        min-height: 240px;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        align-items: center;
+        padding: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- The element fills its nearest positioned ancestor, so give that ancestor a size. -->
+    <div class="stage">
+      <skye-view scene="rainy" hour="17.5" cover="0.7" intensity="0.8" seed="3"></skye-view>
+    </div>
+    <div class="controls">
+      <label>
+        Scene
+        <select id="scene">
+          <option>rainy</option>
+          <option>clear</option>
+          <option>cloudy</option>
+          <option>fog</option>
+          <option>storm</option>
+          <option>sleet</option>
+          <option>snowy</option>
+          <option>haze</option>
+        </select>
+      </label>
+      <label>
+        Hour
+        <input id="hour" type="range" min="0" max="24" step="0.1" value="17.5" />
+      </label>
+      <output id="log">waiting for the sky</output>
+    </div>
+  </body>
+</html>
