@@ -1,6 +1,6 @@
 {
   "name": "skye",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "A zero-dependency WebGL2 sky renderer",
   "license": "MIT",
   "type": "module",
