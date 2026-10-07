@@ -1,0 +1,76 @@
+# `checks` is every part of `bun run check` that needs no browser, and
+# `browsers` the rest (`check:static` and `check:browsers`), so CI calls the
+# scripts by name and cannot drift from the local gate. The browser suites
+# draw WebGL on the runner's CPU, which is slow and billed, so they run only
+# while the repository variable `BROWSER_CI` is `true`; the owner sets it.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+  workflow_dispatch: {}
+
+# Nothing here writes to the repository.
+permissions:
+  contents: read
+
+# A newer push to the same ref supersedes a running check.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: checks
+    # Named, not `ubuntu-latest`: the label moves to a newer Ubuntu on
+    # GitHub's schedule, and WebKit's system packages come from the image.
+    runs-on: ubuntu-24.04
+    # A wedged step would otherwise bill the default six hours.
+    timeout-minutes: 15
+    steps:
+      # Every action is pinned to a commit SHA; the comment names its release.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The token would otherwise sit in .git/config for every later step.
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          # The version package.json pins, so CI and local runs use one Bun.
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bun run check:static
+
+  browsers:
+    name: browsers
+    # Off until the owner sets `BROWSER_CI`; see the header.
+    if: vars.BROWSER_CI == 'true'
+    runs-on: ubuntu-24.04
+    # Software-rendered WebGL in three engines is the long pole.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      # The locally installed Playwright decides which browser builds it
+      # fetches, so they match the version package.json pins.
+      - run: bunx playwright install --with-deps chromium webkit firefox
+      - run: bun run check:browsers
+      # Vitest writes what the page looked like at a failure; without the
+      # upload a failed run on a runner cannot be looked at.
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vitest-failures
+          path: |
+            .vitest/attachments
+            src/**/__screenshots__
+            test/**/__screenshots__
+          # `.vitest` is a dot-directory, which the upload skips by default.
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7

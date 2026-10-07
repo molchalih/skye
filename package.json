@@ -6,7 +6,8 @@
   "license": "MIT",
   "type": "module",
   "sideEffects": [
-    "./dist/define.js"
+    "./dist/define.js",
+    "./dist/worker.js"
   ],
   "exports": {
     ".": {
@@ -45,7 +46,9 @@
   ],
   "packageManager": "bun@1.4.2",
   "scripts": {
-    "check": "bun run lint && bun run typecheck && bun run format:check && bun run test && bun run build && bun run check:package && bun run test:consumers && bun run size",
+    "check": "bun run check:static && bun run check:browsers",
+    "check:static": "bun run lint && bun run typecheck && bun run format:check && bun run test:unit && bun run build && bun run check:package && bun run size",
+    "check:browsers": "bun run test:browser && bun run test:consumers",
     "shaders": "bun scripts/shaders.ts",
     "bench": "bun run shaders && vite bench",
     "build": "bun run shaders && tsdown && cem analyze --quiet",
@@ -57,6 +60,7 @@
     "format": "bun scripts/format.ts --write",
     "changeset": "changeset",
     "version-packages": "changeset version",
+    "release": "changeset publish",
     "format:check": "bun scripts/format.ts --check",
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
