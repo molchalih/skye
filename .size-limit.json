@@ -1,7 +1,22 @@
 [
   {
-    "name": "core",
+    "name": "skye",
     "path": "dist/index.js",
+    "limit": "17.25 kB"
+  },
+  {
+    "name": "skye/define",
+    "path": "dist/define.js",
+    "limit": "20.75 kB"
+  },
+  {
+    "name": "skye/react",
+    "path": "dist/react.js",
+    "limit": "21.25 kB"
+  },
+  {
+    "name": "v6, measured by the same tool (the original budget)",
+    "path": "test/reference/weather-sky-v6.js",
     "limit": "14136 B"
   }
 ]

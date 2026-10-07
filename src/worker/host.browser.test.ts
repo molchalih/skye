@@ -16,6 +16,7 @@ import {
 import { readPixels, wait } from "../../test/support/sky.ts";
 import type { TestRequest } from "../../test/support/workers/instrumented.ts";
 import { JUNK } from "../../test/support/workers/junk.ts";
+import { ShaderError } from "../index.ts";
 import {
   SKYE_CONTEXTLOST,
   SKYE_CONTEXTRESTORED,
@@ -36,6 +37,7 @@ const FAILS_AFTER_TRANSFER = new URL(
   "../../test/support/workers/fails-after-transfer.ts",
   import.meta.url,
 ).href;
+const FAILS_LINKS = new URL("../../test/support/workers/fails-links.ts", import.meta.url).href;
 const THROWS_AFTER_TRANSFER = new URL(
   "../../test/support/workers/throws-after-transfer.ts",
   import.meta.url,
@@ -99,6 +101,21 @@ class TrackedWorker extends NativeWorker {
   }
 }
 
+/** Pixels of a downscaled copy of what `canvas` currently shows that are not transparent; an empty canvas has none. */
+function paintedPixels(canvas: HTMLCanvasElement | null): number {
+  if (canvas === null) throw new Error("no canvas");
+  const copy = document.createElement("canvas");
+  copy.width = 32;
+  copy.height = 20;
+  const context = copy.getContext("2d");
+  if (context === null) throw new Error("no 2d context");
+  context.drawImage(canvas, 0, 0, copy.width, copy.height);
+  const { data } = context.getImageData(0, 0, copy.width, copy.height);
+  let n = 0;
+  for (let i = 3; i < data.length; i += 4) if (data[i] !== 0) n++;
+  return n;
+}
+
 /** Undo steps a test registers, run after it whatever its outcome. */
 const cleanups: (() => void)[] = [];
 
@@ -138,6 +155,46 @@ describe("worker mode", () => {
     await until(() => coverOf(el).hidden === true, "the gradient to hide");
     expect(seen).toEqual([SKYE_READY]);
     expect(errors).toEqual([]);
+  });
+
+  // A worker's frame reaches the page only once the GPU has drawn it, which can be well after the worker's frame
+  // callback; the gradient must not go before it, or the page shows an empty canvas in between.
+  it("hides the gradient only when the canvas already shows the sky", async () => {
+    const { el } = mount({ worker: "", motion: "static", quality: "balanced" });
+    const cover = coverOf(el);
+    const shownAtReveal = new Promise<number>((resolve) => {
+      // Runs in the frame that hides the gradient, before it is painted: what the page shows from then on.
+      const observer = new MutationObserver(() => {
+        if (!cover.hidden) return;
+        observer.disconnect();
+        resolve(paintedPixels(canvasOf(el)));
+      });
+      observer.observe(cover, { attributes: true, attributeFilter: ["hidden"] });
+    });
+    await nextEvent(el, SKYE_READY);
+    expect(await shownAtReveal).toBeGreaterThan(0);
+  });
+
+  // Off screen at ready the worker draws nothing; once shown, the gradient must stay until its first frame is on the
+  // page, which in a worker comes later than the page's own next frame.
+  it("hides the gradient only over a drawn sky when shown after ready", async () => {
+    const { el, box } = mount({ worker: "", motion: "static", quality: "balanced" });
+    box.style.position = "fixed";
+    box.style.left = "-10000px";
+    const cover = coverOf(el);
+    await nextEvent(el, SKYE_READY);
+    await wait(200);
+    expect(cover.hidden).toBe(false);
+    const shownAtReveal = new Promise<number>((resolve) => {
+      const observer = new MutationObserver(() => {
+        if (!cover.hidden) return;
+        observer.disconnect();
+        resolve(paintedPixels(canvasOf(el)));
+      });
+      observer.observe(cover, { attributes: true, attributeFilter: ["hidden"] });
+    });
+    box.style.left = "0";
+    expect(await shownAtReveal).toBeGreaterThan(0);
   });
 
   it("returns a new stats snapshot on each call, and null before the first", async () => {
@@ -296,6 +353,20 @@ describe("worker mode", () => {
     // Past the page's own report of the crash, which comes after the worker's error event.
     await wait(100);
     expect(seen).toEqual([SKYE_READY, SKYE_ERROR]);
+  });
+
+  it("reports a failed shader build as a ShaderError, as on the main thread", async () => {
+    const { el } = mount({ worker: FAILS_LINKS, motion: "static" });
+    const seen = record(el);
+    const event = await nextEvent(el, SKYE_ERROR);
+    const detail: unknown = event instanceof CustomEvent ? event.detail : null;
+    expect(detail).toBeInstanceOf(ShaderError);
+    expect(detail instanceof Error ? detail.name : "").toBe("ShaderError");
+    expect(String(detail)).toMatch(/shader program failed/);
+    expect(TrackedWorker.live()).toHaveLength(1);
+    await wait(50);
+    expect(coverOf(el).hidden).toBe(false);
+    expect(seen).toEqual([SKYE_ERROR]);
   });
 
   it("switches between the worker and the main thread when the attribute changes", async () => {

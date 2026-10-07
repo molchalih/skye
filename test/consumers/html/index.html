@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>skye from an import map</title>
+    <link rel="icon" href="data:," />
+    <!-- A CDN user maps the same specifier to the published dist/define.js; no bundler is involved. -->
+    <script type="importmap">
+      { "imports": { "skye/define": "../node_modules/skye/dist/define.js" } }
+    </script>
+    <script type="module">
+      import "skye/define";
+    </script>
+    <style>
+      .box {
+        position: relative;
+        width: 320px;
+        height: 120px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <skye-view id="main" scene="rainy" hour="13" motion="static"></skye-view>
+    </div>
+    <div class="box">
+      <skye-view id="worker" worker scene="clear" hour="7" motion="static"></skye-view>
+    </div>
+  </body>
+</html>

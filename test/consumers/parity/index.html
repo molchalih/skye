@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>skye as published, beside v6</title>
+    <link rel="icon" href="data:," />
+    <script type="importmap">
+      { "imports": { "skye/define": "../node_modules/skye/dist/define.js" } }
+    </script>
+    <script type="module">
+      import "skye/define";
+      import "../../reference/weather-sky-v6.js";
+    </script>
+    <style>
+      .box {
+        position: relative;
+        width: 320px;
+        height: 120px;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      The same static scene for both; v6 is given the day and moon it would otherwise read from the clock. No wind:
+      each frame, static ones too, moves the clouds by the wind, and the two draw different numbers of frames here.
+    -->
+    <div class="box">
+      <skye-view
+        id="skye"
+        scene="cloudy"
+        hour="13"
+        wind="0"
+        latitude="52.37"
+        day-of-year="172"
+        solar-noon="12.7"
+        moon-phase="0.5"
+        quality="balanced"
+        motion="static"
+      ></skye-view>
+    </div>
+    <div class="box">
+      <weather-sky-v6
+        id="v6"
+        scene="cloudy"
+        hour="13"
+        wind="0"
+        lat="52.37"
+        day="172"
+        noon="12.7"
+        moon="0.5"
+        quality="balanced"
+        motion="static"
+      ></weather-sky-v6>
+    </div>
+  </body>
+</html>

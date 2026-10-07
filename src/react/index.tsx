@@ -4,15 +4,18 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type CSSProperties,
   type DetailedHTMLProps,
   type HTMLAttributes,
   type ReactElement,
   type Ref,
   type RefObject,
 } from "react";
-import type { SkyeStats, TierChange } from "../index.ts";
+import type { SkyeStats, TierChange } from "../core/api.ts";
 import type { SkyeParams } from "../core/params.ts";
+// The modules themselves, not the `skye/element` entry: importing another entry makes the bundler keep a bare
+// `import "./element.js"` in the output, which consumer bundlers warn about since that file is side-effect free.
+import { toAttributes, type SkyeAttribute } from "../element/attributes.ts";
+import { defineSkye } from "../element/define.ts";
 import {
   SKYE_CONTEXTLOST,
   SKYE_CONTEXTRESTORED,
@@ -20,11 +23,8 @@ import {
   SKYE_FALLBACK,
   SKYE_READY,
   SKYE_TIERCHANGE,
-  defineSkye,
-  toAttributes,
-  type SkyeAttribute,
   type SkyeElement,
-} from "../element/index.ts";
+} from "../element/element.ts";
 
 type SkyeIntrinsic = DetailedHTMLProps<HTMLAttributes<SkyeElement>, SkyeElement> &
   Partial<Record<SkyeAttribute, string>>;
@@ -37,12 +37,27 @@ declare module "react" {
   }
 }
 
-/** Props of {@link Skye}: every sky param, the worker switch, layout props and event callbacks. */
-export interface SkyeProps extends SkyeParams {
+/**
+ * The standard HTML attributes `<Skye>` passes through to `<skye-view>`
+ * (`id`, `title`, `role`, `hidden`, `tabIndex`, `aria-*`, `data-*`,
+ * `className`, `style`, DOM event handlers): React's `HTMLAttributes` without
+ * the names skye uses itself, and without children, which the element's
+ * shadow root never shows.
+ */
+export type SkyeHTMLAttributes = Omit<
+  HTMLAttributes<SkyeElement>,
+  keyof SkyeParams | "onError" | "children" | "dangerouslySetInnerHTML"
+>;
+
+/**
+ * Props of {@link Skye}: every sky param, the worker switch, event callbacks,
+ * and the standard HTML attributes, which go to the element as they would on
+ * any other.
+ */
+export interface SkyeProps extends SkyeParams, SkyeHTMLAttributes {
   /** Render in a worker. `true` uses skye's own worker; a string is the URL of the worker module to load instead. */
   worker?: boolean | string | undefined;
-  className?: string | undefined;
-  style?: CSSProperties | undefined;
+  /** The `<skye-view>` element. */
   ref?: Ref<SkyeElement> | undefined;
   /** Programs are linked and the sky is drawing. */
   onReady?: (() => void) | undefined;
@@ -63,6 +78,15 @@ type Handlers = Pick<
   "onReady" | "onError" | "onContextLost" | "onContextRestored" | "onFallback" | "onTierChange"
 >;
 
+// React writes `true` on a custom element as an empty attribute, which ARIA reads as absent: spell booleans out, as
+// React does for built-in elements.
+function ariaAsStrings(html: SkyeHTMLAttributes): SkyeHTMLAttributes {
+  const out: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(html))
+    out[name] = name.startsWith("aria-") && typeof value === "boolean" ? String(value) : value;
+  return out;
+}
+
 function workerAttribute(worker: boolean | string | undefined): string | undefined {
   if (worker === undefined || worker === false) return undefined;
   return worker === true ? "" : worker;
@@ -80,8 +104,6 @@ function workerAttribute(worker: boolean | string | undefined): string | undefin
  */
 export function Skye({
   worker,
-  className,
-  style,
   ref,
   onReady,
   onError,
@@ -89,7 +111,23 @@ export function Skye({
   onContextRestored,
   onFallback,
   onTierChange,
-  ...params
+  scene,
+  cover,
+  intensity,
+  wind,
+  seed,
+  hour,
+  latitude,
+  dayOfYear,
+  solarNoon,
+  moonPhase,
+  glass,
+  focus,
+  exposure,
+  blur,
+  quality,
+  motion,
+  ...html
 }: SkyeProps): ReactElement {
   const element = useRef<SkyeElement | null>(null);
   // A new `ref` identity re-runs this with null then the element, which is harmless.
@@ -142,10 +180,27 @@ export function Skye({
     };
   }, []);
 
-  const attributes = toAttributes(params);
+  const attributes = toAttributes({
+    scene,
+    cover,
+    intensity,
+    wind,
+    seed,
+    hour,
+    latitude,
+    dayOfYear,
+    solarNoon,
+    moonPhase,
+    glass,
+    focus,
+    exposure,
+    blur,
+    quality,
+    motion,
+  });
   const workerValue = workerAttribute(worker);
   if (workerValue !== undefined) attributes.worker = workerValue;
-  return <skye-view ref={setRef} className={className} style={style} {...attributes} />;
+  return <skye-view {...ariaAsStrings(html)} ref={setRef} {...attributes} />;
 }
 
 function readStats(el: SkyeElement | null): SkyeStats | null {
