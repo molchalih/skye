@@ -1,0 +1,58 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "description": [
+    "Every version is pinned exactly, in package.json and in the workflows. The Renovate app must be enabled on the repository by the owner before any of this runs.",
+    "automerge is false: updates land by review. Majors stay out of every group so each gets its own review."
+  ],
+  "labels": ["dependencies"],
+  "rangeStrategy": "pin",
+  "automerge": false,
+  "rebaseWhen": "conflicted",
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "groupName": null,
+    "dependencyDashboardApproval": false,
+    "addLabels": ["security"]
+  },
+  "enabledManagers": ["bun", "github-actions", "npm"],
+  "schedule": ["* 6 * * 1"],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["* 6 * * 1"]
+  },
+  "packageRules": [
+    {
+      "description": "Vitest family: the runner and its browser provider are released in lockstep.",
+      "matchManagers": ["bun", "npm"],
+      "matchPackageNames": ["vitest", "@vitest/**"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "vitest",
+      "groupSlug": "vitest"
+    },
+    {
+      "description": "Playwright family: the browser builds fetched in CI are decided by its version.",
+      "matchManagers": ["bun", "npm"],
+      "matchPackageNames": ["playwright", "playwright-core", "@playwright/test"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "playwright",
+      "groupSlug": "playwright"
+    },
+    {
+      "description": "React and its types move together.",
+      "matchManagers": ["bun", "npm"],
+      "matchPackageNames": ["react", "react-dom", "@types/react", "@types/react-dom"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "react",
+      "groupSlug": "react"
+    },
+    {
+      "description": "GitHub Actions: pinned to commit SHAs with the release in a comment.",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest"],
+      "groupName": "github actions",
+      "groupSlug": "github-actions"
+    }
+  ]
+}

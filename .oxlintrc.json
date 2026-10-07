@@ -10,7 +10,17 @@
     "browser": true,
     "es2024": true
   },
-  "ignorePatterns": ["**/dist/**", "**/node_modules/**", "test/reference/weather-sky-v6.js"],
+  // The consumer fixtures import the packed package, which only exists in
+  // test/consumers/node_modules after the consumer tests install it, so a fresh
+  // clone cannot resolve it and every skye type reads as an error type. The
+  // consumer tests type-check these programs against the packed package instead.
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/node_modules/**",
+    "test/reference/weather-sky-v6.js",
+    "test/consumers/types/**",
+    "test/consumers/vite/**"
+  ],
   "rules": {
     "complexity": ["warn", { "max": 32 }],
     "max-depth": ["warn", { "max": 5 }],

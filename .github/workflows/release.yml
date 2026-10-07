@@ -1,0 +1,65 @@
+# Manual only, and refused while package.json is `"private": true`: publishing
+# is a later, explicit decision. Changesets opens the version pull request
+# while changesets are pending and publishes once they are consumed; npm
+# trusted publishing (OIDC) signs the provenance, so no npm token is stored.
+name: release
+
+on:
+  workflow_dispatch: {}
+
+# Least privilege at the top; the job widens what it needs.
+permissions:
+  contents: read
+
+# A publishing run is never cancelled halfway.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: release
+    # Publishing comes from main only, whatever ref the run was started on.
+    if: github.ref == 'refs/heads/main'
+    # A protected environment gates the run; the npm trusted-publisher
+    # configuration must name this environment (`npm`) to match.
+    environment: npm
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write # the version branch and the release tags
+      pull-requests: write # the version pull request
+      id-token: write # the OIDC token npm trusted publishing exchanges
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Changesets pushes with the token itself; the action reads it from
+          # its own input, so none is left in .git/config.
+          persist-credentials: false
+      - name: Refuse while the package is private
+        run: |
+          if [ "$(jq -r '.private // false' package.json)" = "true" ]; then
+            echo "package.json has \"private\": true; remove it before the first release" >&2
+            exit 1
+          fi
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      # Trusted publishing needs npm 11.5.1 or later, which Node 24 ships.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - run: bun install --frozen-lockfile
+      # Nothing is published from a tree the static gate rejects.
+      - run: bun run check:static
+      - uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
+        with:
+          version: bun run version-packages
+          publish: bun run release
+          commit: "chore(release): version packages"
+          title: "chore(release): version packages"
+          setupGitUser: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          NPM_CONFIG_PROVENANCE: "true"
