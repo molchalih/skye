@@ -2,8 +2,21 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { compare, describeComparison } from "../../test/parity/compare.ts";
 import { whenReady } from "../../test/parity/harness.ts";
 import { Display } from "../../test/support/display.ts";
+import {
+  canvasOf,
+  collectErrors as collectPageErrors,
+  coverOf,
+  glOf,
+  mount,
+  nextEvent,
+  nonBlack,
+  record,
+  track,
+  unmountAll,
+  until,
+} from "../../test/support/element.ts";
 import { readPixels, wait } from "../../test/support/sky.ts";
-import { createSky, type SkyeParams } from "../index.ts";
+import { createSky, ShaderError, type SkyeParams } from "../index.ts";
 import { fallbackBackground } from "./fallback.ts";
 import {
   SKYE_ATTRIBUTES,
@@ -20,70 +33,8 @@ import {
 defineSkye();
 
 const LINK_STATUS = 0x8b82;
-const WAIT_MS = 10_000;
-const boxes: HTMLElement[] = [];
 /** Undo steps a test registers, run after it whatever its outcome. */
 const cleanups: (() => void)[] = [];
-
-interface Mounted {
-  el: SkyeElement;
-  box: HTMLDivElement;
-}
-
-/** A `<skye-view>` filling a positioned box of the given CSS size, appended to the body. */
-function mount(attrs: Record<string, string> = {}, width = 160, height = 100): Mounted {
-  const box = document.createElement("div");
-  box.style.cssText = `position:relative;width:${width}px;height:${height}px`;
-  const el = document.createElement("skye-view");
-  for (const [name, value] of Object.entries(attrs)) el.setAttribute(name, value);
-  box.append(el);
-  document.body.append(box);
-  boxes.push(box);
-  return { el, box };
-}
-
-function canvasOf(el: SkyeElement): HTMLCanvasElement | null {
-  return el.shadowRoot?.querySelector("canvas") ?? null;
-}
-
-function coverOf(el: SkyeElement): HTMLDivElement {
-  const cover = el.shadowRoot?.querySelector("div");
-  if (cover === null || cover === undefined) throw new Error("no fallback layer");
-  return cover;
-}
-
-function glOf(el: SkyeElement): WebGL2RenderingContext {
-  const gl = canvasOf(el)?.getContext("webgl2");
-  if (gl === null || gl === undefined) throw new Error("no context");
-  return gl;
-}
-
-function nextEvent(target: EventTarget, type: string): Promise<Event> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`no ${type} event`)), WAIT_MS);
-    target.addEventListener(
-      type,
-      (e) => {
-        clearTimeout(timer);
-        resolve(e);
-      },
-      { once: true },
-    );
-  });
-}
-
-function until(done: () => boolean, what: string): Promise<void> {
-  const start = performance.now();
-  return new Promise((resolve, reject) => {
-    const check = (): void => {
-      if (done()) resolve();
-      else if (performance.now() - start > WAIT_MS)
-        reject(new Error(`timed out waiting for ${what}`));
-      else setTimeout(check, 10);
-    };
-    check();
-  });
-}
 
 /** The unpatched method of the WebGL2 context prototype, for a spy to call through to. */
 function contextMethod(name: string): Function {
@@ -95,31 +46,11 @@ function contextMethod(name: string): Function {
   return original;
 }
 
-/** Event types dispatched on `el`, in order. */
-function record(el: SkyeElement): string[] {
-  const seen: string[] = [];
-  for (const type of [
-    SKYE_READY,
-    SKYE_ERROR,
-    SKYE_CONTEXTLOST,
-    SKYE_CONTEXTRESTORED,
-    SKYE_FALLBACK,
-  ])
-    el.addEventListener(type, () => seen.push(type));
-  return seen;
-}
-
 /** The style engine's spelling of a CSS background, for comparing against what the element set. */
 function cssBackground(value: string): string {
   const probe = document.createElement("div");
   probe.style.background = value;
   return probe.style.background;
-}
-
-function nonBlack(pixels: Uint8Array): number {
-  let n = 0;
-  for (let i = 0; i < pixels.length; i += 4) if (pixels[i] || pixels[i + 1] || pixels[i + 2]) n++;
-  return n;
 }
 
 /** WebGL2 contexts handed out through a spied `getContext`. */
@@ -132,7 +63,7 @@ function webgl2Contexts(spy: { mock: { results: { value: unknown }[] } }): numbe
 
 afterEach(async () => {
   for (const undo of cleanups.splice(0)) undo();
-  for (const box of boxes.splice(0)) box.remove();
+  unmountAll();
   // Let the deferred teardowns run, so every context is freed before the next test.
   await wait(20);
   SkyeElement.restoreTimeoutMs = 3000;
@@ -141,10 +72,8 @@ afterEach(async () => {
 });
 
 describe("attributes", () => {
-  it("observes every param attribute and nothing else", () => {
-    expect([...SkyeElement.observedAttributes]).toEqual(
-      SKYE_ATTRIBUTES.filter((a) => a !== "worker"),
-    );
+  it("observes every attribute of its contract and nothing else", () => {
+    expect([...SkyeElement.observedAttributes]).toEqual(SKYE_ATTRIBUTES);
   });
 
   it("names no HTMLElement member", () => {
@@ -245,7 +174,7 @@ describe("parity with the v6 element", () => {
       v6.setAttribute(name, value);
     v6Box.append(v6);
     document.body.append(v6Box);
-    boxes.push(v6Box);
+    track(v6Box);
 
     const { el } = mount({
       scene: "rainy",
@@ -289,12 +218,8 @@ describe("zero-size and hidden containers", () => {
   }
 
   function collectErrors(): unknown[] {
-    const errors: unknown[] = [];
-    const onError = (e: ErrorEvent): void => {
-      errors.push(e.error);
-    };
-    window.addEventListener("error", onError);
-    cleanups.push(() => window.removeEventListener("error", onError));
+    const { errors, stop } = collectPageErrors();
+    cleanups.push(stop);
     return errors;
   }
 
@@ -463,7 +388,7 @@ describe("fallback", () => {
     const { el } = mount();
     const seen = record(el);
     const event = await nextEvent(el, SKYE_ERROR);
-    expect(event instanceof CustomEvent && event.detail instanceof Error).toBe(true);
+    expect(event instanceof CustomEvent && event.detail instanceof ShaderError).toBe(true);
     await wait(50);
     expect(coverOf(el).hidden).toBe(false);
     expect(seen).toEqual([SKYE_ERROR]);
@@ -615,7 +540,7 @@ describe("events", () => {
     box.append(el);
     root.append(box);
     document.body.append(outer);
-    boxes.push(outer);
+    track(outer);
     const path = new Promise<EventTarget[]>((resolve) => {
       document.addEventListener(SKYE_READY, (e) => resolve(e.composedPath()), { once: true });
     });
@@ -732,5 +657,12 @@ describe("defineSkye", () => {
     expect(other.prototype).toBeInstanceOf(SkyeElement);
     expect(defineSkye("other-sky")).toBe(other);
     expect(document.createElement("other-sky")).toBeInstanceOf(SkyeElement);
+    // Typed as the element class, so its statics are reachable without a cast.
+    expect(other.restoreTimeoutMs).toBe(SkyeElement.restoreTimeoutMs);
+  });
+
+  it("refuses a tag another element already holds", () => {
+    customElements.define("not-a-sky", class extends HTMLElement {});
+    expect(() => defineSkye("not-a-sky")).toThrow(/already defined/);
   });
 });

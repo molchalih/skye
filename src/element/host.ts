@@ -18,9 +18,11 @@ export interface SkyHostEvents extends SkyEvents {
    */
   webglcontextrestored: undefined;
   /**
-   * The host cannot render after all and draws nothing more. A host that
-   * learns this only after starting (a worker probing for WebGL2) reports it
-   * here; the main-thread host knows at creation and is never created.
+   * The host cannot render after all and draws nothing more: a worker that
+   * failed to load or start, or has no WebGL2 for an `OffscreenCanvas`. Its
+   * canvas may already be the worker's, so the element renders on the main
+   * thread on a fresh canvas. The main-thread host never emits it: it knows
+   * at creation whether it can render.
    */
   unsupported: undefined;
 }

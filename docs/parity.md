@@ -11,6 +11,8 @@ No reference images are stored. Both renderers run on the same GPU, driver and b
 The matrix covers:
 
 - **Static frames** (`static.browser.test.ts`): every scene at night, dawn, noon and dusk, in a landscape box and in a portrait box with odd sizes.
+- **Static frames in a worker** (`worker.browser.test.ts`): the same matrix, with skye's core drawing in a dedicated worker on a canvas transferred to an `OffscreenCanvas`. The worker reads the pixels back right after each frame and posts them to the page. An engine whose workers get no WebGL2 for an `OffscreenCanvas` skips these cases and names that reason.
+- **The published build** (`test/consumers/parity.test.ts`, run by `bun run test:consumers`): the packed, minified `skye/define` element draws one static scene beside v6 in each engine, read back in the frame it draws. It shows that minifying `dist/` changed no pixel. Both sides get no wind, since each frame moves the clouds by the wind and the two draw different numbers of frames there.
 - **Animation** (`animated.browser.test.ts`):
   - 30 frames at 60 fps for rainy, snowy, fog, sleet and haze;
   - storm, run through lightning strikes until a bolt is visible;
@@ -51,7 +53,7 @@ Real mistakes move many channels by many steps and fail by a wide margin: a wron
 
 ## Adding a case
 
-1. Choose the file that matches what you are testing: static, animated, blur or settings.
+1. Choose the file that matches what you are testing: static, animated, blur or settings. The static matrix itself lives in `cases.ts`, which both the main-thread and the worker run read.
 2. Create a pair with `ParityPair.create(params, cssWidth, cssHeight, options)`. The options set the device pixel ratio or turn off half-float targets. Dispose of the pair when the case ends.
 3. Change parameters with `pair.update` and the size or pixel ratio with `pair.resize`. These behave like `Sky.update` and `Sky.resize`.
 4. Call `pair.frame(t)` for each frame and pass the result to `expectParity`. Give each frame a label, so a failure names the frame and the worst pixel.

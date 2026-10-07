@@ -1,5 +1,6 @@
 import type { SkyeStats, TierChange } from "../core/api.ts";
 import type { SkyeParams } from "../core/params.ts";
+import { createWorkerHost } from "../worker/host.ts";
 import { attributesToParams, PARAM_ATTRIBUTES, type SkyeAttribute } from "./attributes.ts";
 import { fallbackBackground } from "./fallback.ts";
 import { createMainThreadHost, type SkyHost } from "./host.ts";
@@ -33,6 +34,8 @@ export type SkyeEventMap = { [K in keyof SkyeEventDetailMap]: CustomEvent<SkyeEv
 /** `HTMLElementEventMap` plus the element's own events, for typed `addEventListener`. */
 export interface SkyeElementEventMap extends HTMLElementEventMap, SkyeEventMap {}
 
+const OBSERVED: readonly string[] = [...PARAM_ATTRIBUTES, "worker"];
+
 const STYLE =
   ":host{display:block;position:absolute;inset:0;width:100%;height:100%;overflow:hidden;background:#1a2440}" +
   "canvas,div{position:absolute;inset:0;width:100%;height:100%;display:block}" +
@@ -57,9 +60,13 @@ function toError(value: unknown): Error {
  * `motion="static"` or a reduced-motion preference. Until the sky is ready,
  * and for good without WebGL2, it shows a gradient for the scene and hour.
  *
- * The `worker` attribute belongs to the attribute contract, but this element
- * always renders on the main thread; worker rendering arrives with the worker
- * entry.
+ * With the `worker` attribute the sky renders in a dedicated worker, on the
+ * canvas transferred to an `OffscreenCanvas`; a non-empty value is the URL of
+ * the worker module to load instead of skye's own. Where that cannot work (no
+ * WebGL2 in workers, no `transferControlToOffscreen`, a worker that fails to
+ * load or start), it renders on the main thread instead. Adding, removing or
+ * changing the attribute restarts the sky in the new mode, with a new
+ * `skye-ready`.
  *
  * Removing the element stops drawing at once. Unless it is inserted again
  * within the same task (a move, or a framework's disconnect/reconnect), the
@@ -74,8 +81,15 @@ export class SkyeElement extends ElementBase {
    */
   static restoreTimeoutMs: number = 3000;
 
+  /**
+   * How long, in ms, a `worker` element waits for its worker to load and
+   * report whether it can render before it renders on the main thread
+   * instead. Applies to every `<skye-view>`.
+   */
+  static workerProbeTimeoutMs: number = 5000;
+
   static get observedAttributes(): readonly string[] {
-    return PARAM_ATTRIBUTES;
+    return OBSERVED;
   }
 
   // One constructed sheet adopted by every instance: no inline <style>, so a CSP without 'unsafe-inline' allows it.
@@ -102,8 +116,12 @@ export class SkyeElement extends ElementBase {
   #ready = false;
   /** The host replaces one lost to a context loss; its ready means restored. */
   #replacing = false;
+  /** `skye-contextlost` was dispatched and neither `skye-contextrestored` nor `skye-ready` has followed. */
+  #down = false;
   /** No WebGL2: the gradient stays. */
   #unsupported = false;
+  /** The worker could not render; the main thread does until the `worker` attribute changes. */
+  #workerFailed = false;
   #width = 0;
   #height = 0;
   #intersecting = true;
@@ -124,7 +142,11 @@ export class SkyeElement extends ElementBase {
     this.#intersectionObserver = new IntersectionObserver(this.#onIntersection);
   }
 
-  /** Current cost metrics, or null while no sky is running (before the idle start, or without WebGL2). */
+  /**
+   * Current cost metrics, or null while no sky is running (before the idle
+   * start, or without WebGL2). In worker mode, the worker's latest snapshot
+   * (taken up to four times a second), or null before its first.
+   */
   stats(): SkyeStats | null {
     return this.#host?.stats() ?? null;
   }
@@ -165,7 +187,11 @@ export class SkyeElement extends ElementBase {
     this.#teardown = setTimeout(this.#tearDown, 0);
   }
 
-  attributeChangedCallback(): void {
+  attributeChangedCallback(name: string, old: string | null, value: string | null): void {
+    if (name === "worker") {
+      if (value !== old) this.#onWorkerChange(old, value);
+      return;
+    }
     const params = this.#params();
     this.#host?.update(params);
     if (!this.#cover.hidden) this.#cover.style.background = fallbackBackground(params);
@@ -191,9 +217,15 @@ export class SkyeElement extends ElementBase {
   };
 
   #createHost(): void {
+    const params = this.#params();
+    const url = this.#workerFailed ? null : this.getAttribute("worker");
     let host: SkyHost | null;
     try {
-      host = createMainThreadHost(this.#canvas, this.#params());
+      host =
+        (url === null
+          ? null
+          : createWorkerHost(this.#canvas, params, url, SkyeElement.workerProbeTimeoutMs)) ??
+        createMainThreadHost(this.#canvas, params);
     } catch (error) {
       this.#emit(SKYE_ERROR, toError(error));
       return;
@@ -205,7 +237,7 @@ export class SkyeElement extends ElementBase {
     this.#host = host;
     this.#offHost = [
       host.on("ready", this.#onReady),
-      host.on("error", (error) => this.#emit(SKYE_ERROR, error)),
+      host.on("error", this.#onError),
       host.on("contextlost", this.#onLost),
       host.on("webglcontextlost", this.#onContextLost),
       host.on("webglcontextrestored", this.#onContextRestored),
@@ -251,6 +283,8 @@ export class SkyeElement extends ElementBase {
 
   readonly #tearDown = (): void => {
     this.#teardown = undefined;
+    // A later insertion starts a new sky, not the one that went down.
+    this.#down = false;
     this.#dropHost();
   };
 
@@ -323,6 +357,7 @@ export class SkyeElement extends ElementBase {
     const replaced = this.#replacing;
     this.#ready = true;
     this.#replacing = false;
+    this.#down = false;
     this.#applyVisibility();
     this.#emit(replaced ? SKYE_CONTEXTRESTORED : SKYE_READY, null);
   };
@@ -338,7 +373,14 @@ export class SkyeElement extends ElementBase {
   // The sky's own report, which may come before or after the browser's: either way the gradient is up first.
   readonly #onLost = (): void => {
     this.#stopDrawing();
+    this.#down = true;
     this.#emit(SKYE_CONTEXTLOST, null);
+  };
+
+  // A failed shader build before the first frame, or a worker that crashed after it: either way nothing draws.
+  readonly #onError = (error: Error): void => {
+    this.#stopDrawing();
+    this.#emit(SKYE_ERROR, error);
   };
 
   #stopDrawing(): void {
@@ -354,14 +396,41 @@ export class SkyeElement extends ElementBase {
 
   readonly #onRestored = (): void => {
     this.#ready = true;
+    this.#down = false;
     this.#applyVisibility();
     this.#emit(SKYE_CONTEXTRESTORED, null);
   };
 
+  // A failed worker gets another try with the new value; a sky already on the main thread stays there when the
+  // attribute goes away.
+  #onWorkerChange(old: string | null, value: string | null): void {
+    const inWorker = old !== null && !this.#workerFailed;
+    this.#workerFailed = false;
+    if (inWorker || value !== null) this.#restartHost();
+  }
+
+  // The worker could not render: the main thread takes over, on a fresh canvas since the worker may hold the old one.
   readonly #onUnsupported = (): void => {
-    this.#dropHost();
-    this.#fallBack();
+    this.#workerFailed = true;
+    this.#restartHost();
   };
+
+  // A new host in the current mode, carrying over an outage of the old one. Before the idle start or after a
+  // teardown there is no host, and the next start reads the mode itself.
+  #restartHost(): void {
+    if (this.#host === undefined) return;
+    // A sky that went down (lost and not yet replaced) comes back as restored, whichever host brings it back.
+    const replacing = this.#replacing || this.#down;
+    this.#dropHost();
+    if (!this.isConnected) {
+      // The pending teardown has nothing left to do.
+      clearTimeout(this.#teardown);
+      this.#teardown = undefined;
+      return;
+    }
+    this.#replacing = replacing;
+    this.#createHost();
+  }
 
   readonly #replace = (): void => {
     this.#restore = undefined;
