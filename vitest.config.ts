@@ -29,7 +29,7 @@ const config: ViteUserConfig = defineConfig({
         test: {
           name: "unit",
           environment: "node",
-          include: ["src/**/*.test.ts", "scripts/**/*.test.ts", "test/**/*.test.ts"],
+          include: ["src/**/*.test.{ts,tsx}", "scripts/**/*.test.ts", "test/**/*.test.ts"],
           exclude: ["**/*.browser.test.*", "**/node_modules/**"],
         },
       },
