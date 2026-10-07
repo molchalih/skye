@@ -5,4 +5,5 @@ coverage/
 .DS_Store
 test-results/
 .vitest/
+src/shaders/generated.ts
 docs/
