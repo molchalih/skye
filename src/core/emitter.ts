@@ -1,16 +1,6 @@
+import { report } from "./report.ts";
 /** A listener for one event; `payload` is `undefined` for events that carry none. */
 export type Listener<T> = (payload: T) => void;
-
-// What an EventTarget does with a throwing listener: report it as uncaught and carry on with the next one.
-// `reportError` reaches the scope's "error" event and the console in windows and workers alike; without it,
-// a rethrow from a microtask is the closest equivalent.
-function report(error: unknown): void {
-  if (typeof globalThis.reportError === "function") globalThis.reportError(error);
-  else
-    queueMicrotask(() => {
-      throw error;
-    });
-}
 
 function call<T>(listener: Listener<T>, payload: T): void {
   try {

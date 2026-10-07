@@ -267,6 +267,28 @@ describe("zero-size and hidden containers", () => {
   });
 });
 
+describe("the hidden attribute", () => {
+  it("hides the element and pauses drawing, which resumes when it is shown again", async () => {
+    const draws = vi.spyOn(WebGL2RenderingContext.prototype, "drawArrays");
+    const { el } = mount({ quality: "balanced" });
+    await nextEvent(el, SKYE_READY);
+    await until(() => draws.mock.calls.length > 0, "a draw call");
+    expect(getComputedStyle(el).display).toBe("block");
+
+    el.hidden = true;
+    expect(getComputedStyle(el).display).toBe("none");
+    // Let the resize observation reach the element and any frame in flight finish.
+    await wait(150);
+    const paused = draws.mock.calls.length;
+    await wait(200);
+    expect(draws.mock.calls.length).toBe(paused);
+
+    el.hidden = false;
+    expect(getComputedStyle(el).display).toBe("block");
+    await until(() => draws.mock.calls.length > paused, "drawing to resume");
+  });
+});
+
 describe("remount churn", () => {
   it("creates no context when removed before the idle start", async () => {
     const getContext = vi.spyOn(HTMLCanvasElement.prototype, "getContext");
