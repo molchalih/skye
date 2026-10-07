@@ -1,0 +1,40 @@
+{
+  "name": "skye",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A zero-dependency WebGL2 sky renderer",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "bun@1.4.2",
+  "engines": {
+    "bun": "1.4.2"
+  },
+  "scripts": {
+    "check": "bun run lint && bun run typecheck && bun run format:check && bun run test",
+    "lint": "oxlint --type-aware",
+    "typecheck": "tsc -b",
+    "format": "bun scripts/format.ts --write",
+    "format:check": "bun scripts/format.ts --check",
+    "test": "vitest run",
+    "test:unit": "vitest run --project unit",
+    "test:browser": "vitest run --project browser"
+  },
+  "peerDependencies": {
+    "react": ">=19"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "26.6.4",
+    "@vitest/browser-playwright": "5.0.3",
+    "oxlint": "1.87.0",
+    "oxlint-tsgolint": "7.0.2003",
+    "playwright": "1.63.0",
+    "prettier": "3.9.9",
+    "typescript": "7.0.2",
+    "vitest": "5.0.3"
+  }
+}
