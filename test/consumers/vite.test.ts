@@ -70,7 +70,7 @@ describe("vite build + preview", () => {
     expect(code).toContain(workers[0]);
   });
 
-  // Without `sideEffects` naming the worker entry, the bundler drops `import "skye/worker"` and emits an empty worker,
+  // Without `sideEffects` naming the worker entry, the bundler drops `import "@a240/skye/worker"` and emits an empty worker,
   // which never answers the probe: the sky silently falls back to the main thread.
   test("the build keeps skye's worker inside the app's own worker module", () => {
     const assets = readdirSync(join(OUT, "assets"));
@@ -122,6 +122,6 @@ describe("vite dev server", () => {
 
   // Otherwise the tests above would not cover the worker URL inside a pre-bundled dependency.
   test("served skye pre-bundled", () => {
-    expect(readdirSync(deps)).toContain("skye_define.js");
+    expect(readdirSync(deps)).toContain("@a240_skye_define.js");
   });
 });

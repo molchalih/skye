@@ -9,13 +9,13 @@
       Run `bun run build` first: the import map points at the built dist/.
       Serve the repository root (for example `bunx vite .`) and open /examples/vanilla.html;
       module imports do not work from a file:// URL.
-      A page that loads from a CDN maps "skye/define" to the CDN URL of dist/define.js instead.
+      A page that loads from a CDN maps "@a240/skye/define" to the CDN URL of dist/define.js instead.
     -->
     <script type="importmap">
-      { "imports": { "skye/define": "../dist/define.js" } }
+      { "imports": { "@a240/skye/define": "../dist/define.js" } }
     </script>
     <script type="module">
-      import "skye/define";
+      import "@a240/skye/define";
 
       const sky = document.querySelector("skye-view");
       const log = document.querySelector("#log");

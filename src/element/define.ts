@@ -21,7 +21,7 @@ function isSkyeElement(ctor: CustomElementConstructor): ctor is typeof SkyeEleme
  * registered, which is not necessarily this copy's `SkyeElement`.
  *
  * Runs only in a browser, where `customElements` exists; on a server, import
- * `skye/define` instead, which registers the element as a side effect and
+ * `@a240/skye/define` instead, which registers the element as a side effect and
  * does nothing without a DOM. Throws when `tag` is already taken by an
  * element that is not a skye element, or by a skye of another brand version.
  */
@@ -42,7 +42,7 @@ export function defineSkye(tag: string = DEFAULT_TAG): typeof SkyeElement {
 }
 
 /**
- * `defineSkye` for the paths nobody called on purpose (importing `skye/define`,
+ * `defineSkye` for the paths nobody called on purpose (importing `@a240/skye/define`,
  * mounting `<Skye>`): a tag held by a foreign element is reported through
  * `reportError` (or its fallback) and the caller carries on, since an import or a render must
  * not be unwound by it.

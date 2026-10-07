@@ -12,7 +12,7 @@ import {
 } from "react";
 import type { SkyeStats, TierChange } from "../core/api.ts";
 import type { SkyeParams } from "../core/params.ts";
-// The modules themselves, not the `skye/element` entry: importing another entry makes the bundler keep a bare
+// The modules themselves, not the `@a240/skye/element` entry: importing another entry makes the bundler keep a bare
 // `import "./element.js"` in the output, which consumer bundlers warn about since that file is side-effect free.
 import { toAttributes, type SkyeAttribute } from "../element/attributes.ts";
 import { defineSkyeQuietly } from "../element/define.ts";

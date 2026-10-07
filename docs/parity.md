@@ -12,7 +12,7 @@ The matrix covers:
 
 - **Static frames** (`static.browser.test.ts`): every scene at night, dawn, noon and dusk, in a landscape box and in a portrait box with odd sizes.
 - **Static frames in a worker** (`worker.browser.test.ts`): the same matrix, with skye's core drawing in a dedicated worker on a canvas transferred to an `OffscreenCanvas`. The worker reads the pixels back right after each frame and posts them to the page. An engine whose workers get no WebGL2 for an `OffscreenCanvas` skips these cases and names that reason.
-- **The published build** (`test/consumers/parity.test.ts`, run by `bun run test:consumers`): the packed, minified `skye/define` element draws one static scene beside v6 in each engine, read back in the frame it draws. It shows that minifying `dist/` changed no pixel. Both sides get no wind, since each frame moves the clouds by the wind and the two draw different numbers of frames there.
+- **The published build** (`test/consumers/parity.test.ts`, run by `bun run test:consumers`): the packed, minified `@a240/skye/define` element draws one static scene beside v6 in each engine, read back in the frame it draws. It shows that minifying `dist/` changed no pixel. Both sides get no wind, since each frame moves the clouds by the wind and the two draw different numbers of frames there.
 - **Animation** (`animated.browser.test.ts`):
   - 30 frames at 60 fps for rainy, snowy, fog, sleet and haze;
   - storm, run through lightning strikes until a bolt is visible;

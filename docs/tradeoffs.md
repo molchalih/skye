@@ -44,16 +44,16 @@ The generator keeps v6's identifiers and numbers on purpose, so even a rename is
 
 **Status:** decided, 2026-10-07: the owner accepts the larger core for 0.1.0. The size check holds the core at the size it had when this was measured.
 
-The budget asked that `skye` (the core entry: `createSky`, params, types) stay within v6's minified, brotli-compressed size. It does not. All figures are minified, then compressed with brotli at quality 11.
+The budget asked that `@a240/skye` (the core entry: `createSky`, params, types) stay within v6's minified, brotli-compressed size. It does not. All figures are minified, then compressed with brotli at quality 11.
 
 The first two columns are **bundled by your bundler**: the entry and everything it imports in one minified file, as an app's build produces it. The last is **loaded from a CDN as published**: the minified files of `dist/` as they are, each compressed on its own and summed over the chain of files the entry imports. jsDelivr's `/+esm` endpoint serves an entry bundled into one file instead, which brings a CDN page close to the bundled figures; it is not measured here.
 
-|                                  | Bundled: esbuild 0.28.2 (the method of the original baseline) | Bundled: size-limit 14.1.0 (rolldown) | From a CDN as published (`dist/`) |
-| -------------------------------- | ------------------------------------------------------------- | ------------------------------------- | --------------------------------- |
-| v6, the whole element            | 14136 B                                                       | 14048 B                               | —                                 |
-| `skye` (core only)               | 17227 B (+3091 B, +21.9%)                                     | 17079 B                               | 17561 B in 3 files                |
-| `skye/define` (element and core) | 20218 B                                                       | 20075 B                               | 21391 B in 5 files                |
-| `skye/react` (React external)    | 20815 B                                                       | 20630 B                               | 22120 B in 5 files                |
+|                                        | Bundled: esbuild 0.28.2 (the method of the original baseline) | Bundled: size-limit 14.1.0 (rolldown) | From a CDN as published (`dist/`) |
+| -------------------------------------- | ------------------------------------------------------------- | ------------------------------------- | --------------------------------- |
+| v6, the whole element                  | 14136 B                                                       | 14048 B                               | —                                 |
+| `@a240/skye` (core only)               | 17227 B (+3091 B, +21.9%)                                     | 17079 B                               | 17561 B in 3 files                |
+| `@a240/skye/define` (element and core) | 20218 B                                                       | 20075 B                               | 21391 B in 5 files                |
+| `@a240/skye/react` (React external)    | 20815 B                                                       | 20630 B                               | 22120 B in 5 files                |
 
 Before `dist/` was minified, a CDN page loading `dist/define.js` fetched 117 kB (32.4 kB brotli); minified it is 65.7 kB (21.4 kB brotli). Minifying leaves the shader strings as they are, and the parity smoke test in `test/consumers/parity.test.ts` renders the published build beside v6 to show the pixels did not change.
 

@@ -31,7 +31,7 @@ describe("a page that loads skye twice", () => {
     expect(defineSkye()).toBe(second.SkyeElement);
   });
 
-  it("does not throw or report anything when skye/define is evaluated", async () => {
+  it("does not throw or report anything when @a240/skye/define is evaluated", async () => {
     const report = vi.fn();
     vi.stubGlobal("reportError", report);
     await expect(import("../define.ts")).resolves.toBeDefined();

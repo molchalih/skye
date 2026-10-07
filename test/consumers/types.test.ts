@@ -19,7 +19,7 @@ test("the shipped declarations type-check a consumer", () => {
   typecheck("types");
 });
 
-// A program of its own: in the one above, `skye/element` already declares the tag for every file.
-test("importing skye/define alone types <skye-view> as SkyeElement", () => {
+// A program of its own: in the one above, `@a240/skye/element` already declares the tag for every file.
+test("importing @a240/skye/define alone types <skye-view> as SkyeElement", () => {
   typecheck("types/define");
 });

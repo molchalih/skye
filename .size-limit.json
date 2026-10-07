@@ -1,16 +1,16 @@
 [
   {
-    "name": "skye",
+    "name": "@a240/skye",
     "path": "dist/index.js",
     "limit": "17.25 kB"
   },
   {
-    "name": "skye/define",
+    "name": "@a240/skye/define",
     "path": "dist/define.js",
     "limit": "20.75 kB"
   },
   {
-    "name": "skye/react",
+    "name": "@a240/skye/react",
     "path": "dist/react.js",
     "limit": "21.25 kB"
   },

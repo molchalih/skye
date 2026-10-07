@@ -58,7 +58,7 @@ describe("the packed package", () => {
     }
   });
 
-  // A bundler drops a side-effect-free import entirely: `import "skye/worker"` in a custom worker would be empty.
+  // A bundler drops a side-effect-free import entirely: `import "@a240/skye/worker"` in a custom worker would be empty.
   test("declares the side-effect entries", () => {
     expect(pkg.sideEffects).toEqual(["./dist/define.js", "./dist/worker.js"]);
   });

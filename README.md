@@ -1,4 +1,4 @@
-# skye
+# @a240/skye
 
 A zero-dependency WebGL2 sky renderer. It draws weather scenes (clear, cloudy, fog, rain, storm, sleet, snow, haze) with clouds, sun, moon, stars, rain on glass and background blur. It has no runtime dependencies and works from plain HTML, any framework, or a worker.
 
@@ -19,24 +19,24 @@ skye is a pure renderer. It never reads the clock or the calendar and never fetc
 skye is not published yet; these instructions apply once it is.
 
 ```sh
-npm install skye
+npm install @a240/skye
 ```
 
-| Entry          | What it is                                                                             |
-| -------------- | -------------------------------------------------------------------------------------- |
-| `skye`         | `createSky(canvas, params, options)` and the types. No DOM access.                     |
-| `skye/define`  | Defines `<skye-view>` as a side effect. For bundlers and CDN scripts.                  |
-| `skye/element` | `SkyeElement`, `defineSkye(tag)` and the attribute contract. No side effect on import. |
-| `skye/react`   | `<Skye>` and `useSkyeStats`. `react` 19 or later is an optional peer.                  |
-| `skye/astro`   | Sun position, moon phase and day of year as pure functions.                            |
-| `skye/worker`  | The worker module. Loaded for you in worker mode.                                      |
+| Entry                | What it is                                                                             |
+| -------------------- | -------------------------------------------------------------------------------------- |
+| `@a240/skye`         | `createSky(canvas, params, options)` and the types. No DOM access.                     |
+| `@a240/skye/define`  | Defines `<skye-view>` as a side effect. For bundlers and CDN scripts.                  |
+| `@a240/skye/element` | `SkyeElement`, `defineSkye(tag)` and the attribute contract. No side effect on import. |
+| `@a240/skye/react`   | `<Skye>` and `useSkyeStats`. `react` 19 or later is an optional peer.                  |
+| `@a240/skye/astro`   | Sun position, moon phase and day of year as pure functions.                            |
+| `@a240/skye/worker`  | The worker module. Loaded for you in worker mode.                                      |
 
 ## Quick start
 
 ### Element
 
 ```ts
-import "skye/define";
+import "@a240/skye/define";
 ```
 
 ```html
@@ -61,19 +61,22 @@ A complete page is in [`examples/vanilla.html`](examples/vanilla.html). It needs
 No bundler is needed. Replace `<version>` with a release, such as `0.1.0`:
 
 ```html
-<script type="module" src="https://cdn.jsdelivr.net/npm/skye@<version>/dist/define.js"></script>
+<script
+  type="module"
+  src="https://cdn.jsdelivr.net/npm/@a240/skye@<version>/dist/define.js"
+></script>
 <!-- or -->
-<script type="module" src="https://unpkg.com/skye@<version>/dist/define.js"></script>
+<script type="module" src="https://unpkg.com/@a240/skye@<version>/dist/define.js"></script>
 ```
 
-Pin an exact version in production. `dist/define.js` loads four more files from beside it; jsDelivr's `/+esm` endpoint (`https://cdn.jsdelivr.net/npm/skye@<version>/dist/define.js/+esm`) serves it bundled into one. See [bundle size](#bundle-size) for what each costs, and [worker mode](#worker-mode) for the extra step a CDN needs.
+Pin an exact version in production. `dist/define.js` loads four more files from beside it; jsDelivr's `/+esm` endpoint (`https://cdn.jsdelivr.net/npm/@a240/skye@<version>/dist/define.js/+esm`) serves it bundled into one. See [bundle size](#bundle-size) for what each costs, and [worker mode](#worker-mode) for the extra step a CDN needs.
 
 ### Core
 
 `createSky` draws into a canvas you own. It works with an `HTMLCanvasElement` or an `OffscreenCanvas` and throws if the canvas cannot give a WebGL2 context.
 
 ```ts
-import { createSky } from "skye";
+import { createSky } from "@a240/skye";
 
 const canvas = document.querySelector("canvas");
 if (canvas === null) throw new Error("no <canvas> on the page");
@@ -111,7 +114,7 @@ canvas.getContext("webgl2")?.getExtension("WEBGL_lose_context")?.loseContext();
 ### React
 
 ```tsx
-import { Skye } from "skye/react";
+import { Skye } from "@a240/skye/react";
 
 <div style={{ position: "relative", height: 320 }}>
   <Skye scene="rainy" hour={17.5} onReady={() => {}} onTierChange={(c) => console.log(c.quality)} />
@@ -122,8 +125,8 @@ Props are the [param](#params) names (not the attribute names), plus `worker`, `
 
 ```tsx
 import { useRef } from "react";
-import type { SkyeElement } from "skye/element";
-import { Skye, useSkyeStats } from "skye/react";
+import type { SkyeElement } from "@a240/skye/element";
+import { Skye, useSkyeStats } from "@a240/skye/react";
 
 function Sky() {
   const ref = useRef<SkyeElement>(null);
@@ -139,10 +142,10 @@ function Sky() {
 
 ### Time, date and the moon
 
-Defaults are fixed numbers, so the same markup always draws the same sky. `skye/astro` computes what to pass:
+Defaults are fixed numbers, so the same markup always draws the same sky. `@a240/skye/astro` computes what to pass:
 
 ```ts
-import { dayOfYear, moonPhase, solarPosition } from "skye/astro";
+import { dayOfYear, moonPhase, solarPosition } from "@a240/skye/astro";
 
 const now = new Date();
 const params = {
@@ -168,7 +171,7 @@ Add the `worker` attribute (or the `worker` prop) and the sky renders on an `Off
 - **Bundlers.** Vite finds and emits the worker file by itself, because skye loads it with `new Worker(new URL("./worker.js", import.meta.url), { type: "module" })`. Other bundlers need to support that pattern.
 - **CSP.** The worker is a real file, never a `blob:` URL, so it works under `script-src 'self'`. The policy must allow it through `worker-src 'self'`. Without a `worker-src` rule, browsers use `child-src` and then `script-src`.
 - **URL override.** A non-empty attribute value is the URL of the worker module to load instead: `<skye-view worker="/assets/skye/worker.js">`. Use it when a bundler cannot find the worker, or when the page loads skye from a CDN. A worker must be same-origin with the page, so a CDN page has to host skye's `dist/` directory itself (the worker imports its sibling chunks) and point the attribute at `worker.js` there.
-- **Your own worker module.** A module whose only line is `import "skye/worker";` serves as the worker; bundle it as a worker of your app (in Vite, `import url from "./sky-worker.ts?worker&url"`) and pass its URL in the attribute. The import does nothing outside a dedicated worker, so it is safe in code a server or a page also loads.
+- **Your own worker module.** A module whose only line is `import "@a240/skye/worker";` serves as the worker; bundle it as a worker of your app (in Vite, `import url from "./sky-worker.ts?worker&url"`) and pass its URL in the attribute. The import does nothing outside a dedicated worker, so it is safe in code a server or a page also loads.
 - **Changes.** Adding, removing or changing the attribute restarts the sky in the new mode, and a new `skye-ready` follows.
 - **Fallbacks.** If the worker cannot run, the sky renders on the main thread with no uncaught error. That covers no `OffscreenCanvas` WebGL2, no `transferControlToOffscreen`, a worker that cannot be constructed, fails to load, throws, or fails before its first frame, and a worker that does not answer within `SkyeElement.workerProbeTimeoutMs` (5000 ms). A worker that crashes after its first frame is reported as `skye-error`, and the gradient returns.
 - **Check which mode is running** with `stats().worker`. In worker mode `stats()` is the worker's latest snapshot, refreshed up to four times a second.
@@ -198,7 +201,7 @@ One table serves the core, the element and React. Out-of-range numbers are clamp
 | `quality`   | `quality`     | `auto` `low` `balanced` `high`. `auto` adapts to frame time                   | `auto`   |
 | `motion`    | `motion`      | `auto` `full` `static`. See [reduced motion](#behaviour)                      | `auto`   |
 
-The element has one more attribute, `worker`. Attribute names never collide with `HTMLElement` members. `DEFAULTS` and `resolveParams` are exported from `skye`, and `toAttributes(params)` from `skye/element` turns params into attributes.
+The element has one more attribute, `worker`. Attribute names never collide with `HTMLElement` members. `DEFAULTS` and `resolveParams` are exported from `skye`, and `toAttributes(params)` from `@a240/skye/element` turns params into attributes.
 
 ## Stats
 
@@ -242,7 +245,7 @@ On the core, a failed shader build is kept and replayed to listeners added later
 - **Context loss.** The sky stops, waits for the browser to restore the context, rebuilds every GPU resource and resumes, keeping its detail scale and GPU-time average. On the element, if the browser does not restore the context within `SkyeElement.restoreTimeoutMs` (3000 ms), the element replaces its canvas and creates a new context. It dispatches `skye-contextlost`, then `skye-contextrestored`.
 - **Reduced motion.** With `motion="auto"` (the default), `prefers-reduced-motion: reduce` makes the sky static: it draws one frame per change and is otherwise idle. `motion="static"` does this always, and `motion="full"` never. The element follows changes of the preference. On the core, call `setReducedMotion(reduced)`; it reads the media query once at creation.
 - **Several skies on one page** are independent. Each owns its canvas and context.
-- **Server rendering.** Every entry can be imported without a DOM. `skye/define` defines nothing there, so import it where it runs in the browser. `<Skye>` renders the bare `<skye-view>` tag on the server and upgrades on the client.
+- **Server rendering.** Every entry can be imported without a DOM. `@a240/skye/define` defines nothing there, so import it where it runs in the browser. `<Skye>` renders the bare `<skye-view>` tag on the server and upgrades on the client.
 
 ## Browser support
 
@@ -260,11 +263,11 @@ What a page downloads depends on how it loads skye. All figures are brotli-compr
 
 **Bundled by your bundler.** An app's bundler pulls each entry and the code it imports into its own output and minifies it. size-limit (`bun run size`) measures that:
 
-| Entry         | Size    | Contents                                          |
-| ------------- | ------- | ------------------------------------------------- |
-| `skye`        | 17.1 kB | The core.                                         |
-| `skye/define` | 20.1 kB | Element and core.                                 |
-| `skye/react`  | 20.6 kB | Component, element and core, with React external. |
+| Entry               | Size    | Contents                                          |
+| ------------------- | ------- | ------------------------------------------------- |
+| `@a240/skye`        | 17.1 kB | The core.                                         |
+| `@a240/skye/define` | 20.1 kB | Element and core.                                 |
+| `@a240/skye/react`  | 20.6 kB | Component, element and core, with React external. |
 
 **Loaded from a CDN as published.** `dist/` is minified, with external source maps that browsers fetch only when developer tools ask. Served as is, an entry is a chain of files, each compressed on its own:
 
@@ -276,7 +279,7 @@ What a page downloads depends on how it loads skye. All figures are brotli-compr
 
 \* All but `worker.js` itself (3.3 kB, 1.2 kB brotli) are the chunks the page has already loaded.
 
-The five files of `dist/define.js` arrive in four rounds of requests, each file found only once the one before it has loaded. jsDelivr's `/+esm` endpoint (`https://cdn.jsdelivr.net/npm/skye@<version>/dist/define.js/+esm`) serves an entry bundled into a single file instead; it is not measured here. Worker mode from a CDN still needs `dist/` hosted on the page's own origin (see [worker mode](#worker-mode)).
+The five files of `dist/define.js` arrive in four rounds of requests, each file found only once the one before it has loaded. jsDelivr's `/+esm` endpoint (`https://cdn.jsdelivr.net/npm/@a240/skye@<version>/dist/define.js/+esm`) serves an entry bundled into a single file instead; it is not measured here. Worker mode from a CDN still needs `dist/` hosted on the page's own origin (see [worker mode](#worker-mode)).
 
 v6, the renderer this replaces, is 14.0 kB measured by size-limit (14048 B), and 14136 B by the method of the original budget (esbuild 0.28.2 `--minify`, then brotli at quality 11). skye is larger because it adds context recovery, an error channel, typed events and stats, caller-driven frames and worker rendering. [`docs/tradeoffs.md`](docs/tradeoffs.md) has the measurements and the decision.
 
