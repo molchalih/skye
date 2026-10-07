@@ -16,8 +16,6 @@ skye is a pure renderer. It never reads the clock or the calendar and never fetc
 
 ## Install
 
-skye is not published yet; these instructions apply once it is.
-
 ```sh
 npm install @a240/skye
 ```

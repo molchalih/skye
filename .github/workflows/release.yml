@@ -48,11 +48,10 @@ jobs:
       - run: bun run check:static
       - uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
         with:
-          version: bun run version-packages
-          publish: bun run release
-          commit: "chore(release): version packages"
-          title: "chore(release): version packages"
-          setupGitUser: true
+          version-script: bun run version-packages
+          publish-script: bun run release
+          commit-message: "chore(release): version packages"
+          pr-title: "chore(release): version packages"
         env:
           GITHUB_TOKEN: ${{ github.token }}
           NPM_CONFIG_PROVENANCE: "true"

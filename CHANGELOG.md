@@ -1,5 +1,11 @@
 # @a240/skye
 
+## 0.1.1
+
+### Patch Changes
+
+- The readme no longer says the package is unpublished.
+
 ## 0.1.0
 
 ### Minor Changes
