@@ -1,8 +1,28 @@
 {
-  "name": "skye",
-  "version": "0.0.0",
+  "name": "@a240/skye",
+  "version": "0.1.0",
   "description": "A zero-dependency WebGL2 sky renderer",
   "license": "MIT",
+  "keywords": [
+    "webgl",
+    "webgl2",
+    "sky",
+    "weather",
+    "shader",
+    "web-component",
+    "custom-element",
+    "renderer",
+    "offscreencanvas",
+    "react"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/molchalih/skye.git"
+  },
+  "homepage": "https://github.com/molchalih/skye#readme",
+  "bugs": {
+    "url": "https://github.com/molchalih/skye/issues"
+  },
   "type": "module",
   "sideEffects": [
     "./dist/define.js",

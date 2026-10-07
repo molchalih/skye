@@ -40,7 +40,7 @@ describe("a tag held by an element that is not skye's", () => {
     expect(deferred).toHaveLength(1);
   });
 
-  it("reports it, without throwing, when skye/define is evaluated", async () => {
+  it("reports it, without throwing, when @a240/skye/define is evaluated", async () => {
     const report = vi.fn();
     vi.stubGlobal("reportError", report);
     await expect(import("../define.ts")).resolves.toBeDefined();

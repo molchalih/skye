@@ -25,8 +25,8 @@ function documented(kind, entries) {
 }
 
 /**
- * Reshapes the analysis of the source into the published surface: the declarations `skye/element` exports, at the
- * path they are published under, and the definition `skye/define` makes. Internal modules, private members,
+ * Reshapes the analysis of the source into the published surface: the declarations `@a240/skye/element` exports, at the
+ * path they are published under, and the definition `@a240/skye/define` makes. Internal modules, private members,
  * inherited methods and the analyzer's misreadings are left out; any other undocumented member or event fails.
  */
 function publishedSurface() {

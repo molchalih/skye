@@ -13,7 +13,7 @@ function run(command: string, args: string[], cwd: string): void {
 
 /**
  * Packs skye the way it is published (`prepack` builds it first) and unpacks the tarball where the consumers
- * resolve `skye`, so every consumer test sees the published files and nothing else of the repository.
+ * resolve `@a240/skye`, so every consumer test sees the published files and nothing else of the repository.
  */
 export function setup(): void {
   const packs = join(SCRATCH, "pack");
