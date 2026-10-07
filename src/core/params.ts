@@ -1,10 +1,15 @@
 import { clamp } from "./math.ts";
 
+/** A weather scene: what the sky shows besides the time of day. */
 export type SceneName = "clear" | "cloudy" | "fog" | "rainy" | "storm" | "sleet" | "snowy" | "haze";
+/** A fixed quality tier, or `"auto"`, which picks one from the measured frame time. */
 export type Quality = "auto" | "low" | "balanced" | "high";
+/** A fixed quality tier: what `"auto"` resolves to at any moment. */
 export type Tier = Exclude<Quality, "auto">;
+/** `"full"` animates, `"static"` draws one frame per change, `"auto"` follows prefers-reduced-motion. */
 export type Motion = "auto" | "full" | "static";
 
+/** Every scene name, in v6's order. */
 export const SCENE_NAMES: readonly SceneName[] = [
   "clear",
   "cloudy",
@@ -15,7 +20,9 @@ export const SCENE_NAMES: readonly SceneName[] = [
   "snowy",
   "haze",
 ];
+/** Every `quality` value, `"auto"` first, then the tiers from cheapest to finest. */
 export const QUALITIES: readonly Quality[] = ["auto", "low", "balanced", "high"];
+/** Every `motion` value. */
 export const MOTIONS: readonly Motion[] = ["auto", "full", "static"];
 
 /**
@@ -33,7 +40,10 @@ export interface SkyeParams {
   wind?: number | undefined;
   /** Cloud pattern seed; any finite number. */
   seed?: number | undefined;
-  /** Local solar hour; wraps into [0, 24). */
+  /**
+   * Local clock hour; wraps into [0, 24). The sun's position comes from its
+   * distance to `solarNoon`, so this is clock time, not true solar time.
+   */
   hour?: number | undefined;
   /** Degrees, clamped to -66..66. */
   latitude?: number | undefined;
@@ -57,6 +67,10 @@ export interface SkyeParams {
   motion?: Motion | undefined;
 }
 
+/**
+ * Params with every field resolved: defaults applied, numbers clamped or
+ * wrapped, names validated. `wind` stays undefined for the scene's own wind.
+ */
 export interface ResolvedParams {
   scene: SceneName;
   cover: number;
@@ -76,6 +90,7 @@ export interface ResolvedParams {
   motion: Motion;
 }
 
+/** What every absent or invalid field resolves to. None depends on the clock or the calendar. */
 export const DEFAULTS: Readonly<ResolvedParams> = Object.freeze({
   scene: "cloudy",
   cover: 0.4,
@@ -103,24 +118,30 @@ function wrap(x: number, period: number): number {
   return ((x % period) + period) % period;
 }
 
-function resolveScene(v: unknown): SceneName {
+/** A scene name, or `"cloudy"` for anything unknown. */
+export function resolveScene(v: unknown): SceneName {
   return SCENE_NAMES.find((name) => name === v) ?? DEFAULTS.scene;
 }
 
-function resolveQuality(v: unknown): Quality {
+/** Empty or absent is `"auto"`; anything other than `"low"` or `"high"` is `"balanced"`. */
+export function resolveQuality(v: unknown): Quality {
   if (v === undefined || v === null || v === "" || v === "auto") return "auto";
   return v === "low" || v === "high" ? v : "balanced";
 }
 
-// v6 treats any motion other than "static" or "auto" as full motion.
-function resolveMotion(v: unknown): Motion {
+/** Empty or absent is `"auto"`; v6 treats any motion other than `"static"` or `"auto"` as full motion. */
+export function resolveMotion(v: unknown): Motion {
   if (v === undefined || v === null || v === "" || v === "auto") return "auto";
   return v === "static" ? "static" : "full";
 }
 
-/** Applies defaults, clamping and wrapping exactly as v6's attribute parsing did. Never throws. */
-export function resolveParams(input: Partial<SkyeParams>): ResolvedParams {
+/**
+ * Applies defaults, clamping and wrapping exactly as v6's attribute parsing
+ * did. Never throws; `null` or `undefined` resolves to `DEFAULTS`.
+ */
+export function resolveParams(params: Partial<SkyeParams> | null | undefined): ResolvedParams {
   const d = DEFAULTS;
+  const input = params ?? {};
   return {
     scene: resolveScene(input.scene),
     cover: clamp(num(input.cover, d.cover), 0, 1),
