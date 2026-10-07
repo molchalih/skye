@@ -12,7 +12,7 @@ import {
 await import("../reference/weather-sky-v6.js");
 
 /** Seed of the random sequence both renderers draw lightning from; each side gets its own fresh copy. */
-const RANDOM_SEED = 1;
+export const RANDOM_SEED = 1;
 const START_TIMEOUT_MS = 10_000;
 
 /** One frame from both renderers, as read back with `readPixels`. */
@@ -65,11 +65,7 @@ function finiteNumber(v: unknown): number {
   return typeof v === "number" && Number.isFinite(v) ? v : 0;
 }
 
-function readCanvas(gl: WebGL2RenderingContext): {
-  width: number;
-  height: number;
-  pixels: Uint8Array;
-} {
+function readCanvas(gl: WebGL2RenderingContext): Frame {
   const width = gl.drawingBufferWidth;
   const height = gl.drawingBufferHeight;
   const pixels = new Uint8Array(width * height * 4);
@@ -136,17 +132,29 @@ export function whenReady(sky: Sky): Promise<void> {
   });
 }
 
+/** One frame read back from a canvas with `readPixels`, bottom row first. */
+export interface Frame {
+  width: number;
+  height: number;
+  pixels: Uint8Array;
+}
+
+/** v6's frame, plus its lightning flash and visible bolt strength, so a case can show lightning really fired. */
+export interface V6Frame extends Frame {
+  flash: number;
+  bolt: number;
+}
+
 /**
- * v6 and skye side by side in this page at the same CSS size and device pixel
- * ratio, driven frame by frame with the same params, time and random sequence.
+ * v6's element in this page at a CSS size and device pixel ratio, its own
+ * loop switched off, drawn frame by frame with stubbed time and random
+ * sequence the way skye is driven with `render(t)`.
  */
-export class ParityPair {
+export class V6Reference {
   private readonly host: HTMLDivElement;
-  private readonly v6: HTMLElement;
-  private readonly v6Gl: WebGL2RenderingContext;
-  private readonly sky: Sky;
-  private readonly skyGl: WebGL2RenderingContext;
-  private readonly v6Random = createRandom(RANDOM_SEED);
+  private readonly el: HTMLElement;
+  private readonly gl: WebGL2RenderingContext;
+  private readonly random = createRandom(RANDOM_SEED);
   private params: SkyeParams;
   private ratio: number;
   private lastT = 0;
@@ -155,28 +163,129 @@ export class ParityPair {
 
   private constructor(
     host: HTMLDivElement,
-    v6: HTMLElement,
-    v6Gl: WebGL2RenderingContext,
-    sky: Sky,
-    skyGl: WebGL2RenderingContext,
+    el: HTMLElement,
+    gl: WebGL2RenderingContext,
     params: SkyeParams,
     ratio: number,
   ) {
     this.host = host;
-    this.v6 = v6;
-    this.v6Gl = v6Gl;
-    this.sky = sky;
-    this.skyGl = skyGl;
+    this.el = el;
+    this.gl = gl;
     this.params = params;
     this.ratio = ratio;
     // Records the flash v6 computes each frame without changing what it returns.
-    const lightning: unknown = Reflect.get(v6, "_lightning");
+    const lightning: unknown = Reflect.get(el, "_lightning");
     if (typeof lightning !== "function") throw new Error("v6 has no _lightning");
-    Reflect.set(v6, "_lightning", (...args: unknown[]): unknown => {
-      const flash: unknown = Reflect.apply(lightning, v6, args);
+    Reflect.set(el, "_lightning", (...args: unknown[]): unknown => {
+      const flash: unknown = Reflect.apply(lightning, el, args);
       this.flash = finiteNumber(flash);
       return flash;
     });
+  }
+
+  /** Mounts v6 and resolves once its programs are linked. */
+  static async create(
+    params: SkyeParams,
+    cssWidth: number,
+    cssHeight: number,
+    devicePixelRatio = 1,
+  ): Promise<V6Reference> {
+    const host = document.createElement("div");
+    host.style.cssText = `position:absolute;left:0;top:0;width:${cssWidth}px;height:${cssHeight}px`;
+    const el = document.createElement("weather-sky-v6");
+    // Every frame is drawn by hand; v6's own rAF loop would draw extra ones.
+    Reflect.set(el, "_loop", () => undefined);
+    setV6Attributes(el, params);
+    host.append(el);
+    document.body.append(host);
+    await until(() => Reflect.get(el, "_glass") && Reflect.get(el, "_blur"), "v6 programs");
+    const gl: unknown = Reflect.get(el, "_gl");
+    if (!(gl instanceof WebGL2RenderingContext)) throw new Error("v6 has no WebGL2 context");
+    return new V6Reference(host, el, gl, params, devicePixelRatio);
+  }
+
+  /** Whether v6 renders into half-float targets. */
+  get floatTargets(): boolean {
+    return Reflect.get(this.el, "_float") === true;
+  }
+
+  /** The animation time of v6's next lightning strike, or -1 while none is scheduled. */
+  get nextStrike(): number {
+    const bolt: unknown = Reflect.get(this.el, "_bolt");
+    return typeof bolt === "object" && bolt !== null ? finiteNumber(Reflect.get(bolt, "next")) : -1;
+  }
+
+  /** Merges new params, like `Sky.update`; v6 sees the merged set as attributes. */
+  update(params: SkyeParams): void {
+    this.params = { ...this.params, ...params };
+    setV6Attributes(this.el, this.params);
+    // v6's attributeChangedCallback restarts its frame interval.
+    this.hasLastT = false;
+  }
+
+  /** Changes the CSS size and ratio. v6's ResizeObserver drops the cached target but keeps the frame interval. */
+  resize(cssWidth: number, cssHeight: number, devicePixelRatio: number): void {
+    this.host.style.width = `${cssWidth}px`;
+    this.host.style.height = `${cssHeight}px`;
+    // Set what v6's ResizeObserver would record, so the next frame does not depend on observer timing.
+    Reflect.set(this.el, "_cw", cssWidth);
+    Reflect.set(this.el, "_ch", cssHeight);
+    Reflect.set(this.el, "_envKey", "");
+    this.ratio = devicePixelRatio;
+  }
+
+  /** Draws one frame at animation time `t` (seconds) and reads it back. */
+  frame(t: number): V6Frame {
+    const isStatic = this.params.motion === "static";
+    const time = isStatic ? STATIC_TIME_S : t;
+    // v6's loop: 1/60 for the first frame (static frames pass nothing, which v6 also reads as 1/60), then the
+    // interval capped at 0.1 s. Its clock never runs backwards, so a backward step reaches it as no time at all.
+    const dt = isStatic || !this.hasLastT ? 1 / 60 : Math.min(0.1, Math.max(0, t - this.lastT));
+    this.lastT = t;
+    this.hasLastT = true;
+
+    Reflect.set(this.el, "_now", () => time);
+    // v6's static path clears the eased state before each frame.
+    if (isStatic) Reflect.set(this.el, "_cur", null);
+    this.flash = 0;
+    const random = Math.random;
+    Math.random = this.random;
+    try {
+      withDevicePixelRatio(this.ratio, () => {
+        Reflect.apply(Reflect.get(this.el, "renderFrame"), this.el, [dt]);
+      });
+    } finally {
+      Math.random = random;
+    }
+    const bolt: unknown = Reflect.get(this.el, "_bolt");
+    return {
+      ...readCanvas(this.gl),
+      flash: this.flash,
+      bolt: typeof bolt === "object" && bolt !== null ? finiteNumber(Reflect.get(bolt, "bolt")) : 0,
+    };
+  }
+
+  dispose(): void {
+    loseContext(this.gl);
+    this.host.remove();
+  }
+}
+
+/**
+ * v6 and skye side by side in this page at the same CSS size and device pixel
+ * ratio, driven frame by frame with the same params, time and random sequence.
+ */
+export class ParityPair {
+  private readonly v6: V6Reference;
+  private readonly sky: Sky;
+  private readonly skyGl: WebGL2RenderingContext;
+  private ratio: number;
+
+  private constructor(v6: V6Reference, sky: Sky, skyGl: WebGL2RenderingContext, ratio: number) {
+    this.v6 = v6;
+    this.sky = sky;
+    this.skyGl = skyGl;
+    this.ratio = ratio;
   }
 
   static async create(
@@ -188,26 +297,15 @@ export class ParityPair {
     const ratio = options.devicePixelRatio ?? 1;
     const restore = options.floatTargets === false ? hideFloatTargets() : (): void => undefined;
     try {
-      const host = document.createElement("div");
-      host.style.cssText = `position:absolute;left:0;top:0;width:${cssWidth}px;height:${cssHeight}px`;
-      const v6 = document.createElement("weather-sky-v6");
-      // The harness drives every frame itself; v6's own rAF loop would draw extra frames.
-      Reflect.set(v6, "_loop", () => undefined);
-      setV6Attributes(v6, params);
-      host.append(v6);
-      document.body.append(host);
-
       const canvas = document.createElement("canvas");
       const sky = createSky(canvas, params, { random: createRandom(RANDOM_SEED) });
       const ready = whenReady(sky);
       sky.resize(cssWidth, cssHeight, ratio);
-      await until(() => Reflect.get(v6, "_glass") && Reflect.get(v6, "_blur"), "v6 programs");
+      const v6 = await V6Reference.create(params, cssWidth, cssHeight, ratio);
       await ready;
-      const v6Gl: unknown = Reflect.get(v6, "_gl");
       const skyGl = canvas.getContext("webgl2");
-      if (!(v6Gl instanceof WebGL2RenderingContext) || skyGl === null)
-        throw new Error("no WebGL2 context");
-      return new ParityPair(host, v6, v6Gl, sky, skyGl, params, ratio);
+      if (skyGl === null) throw new Error("no WebGL2 context");
+      return new ParityPair(v6, sky, skyGl, ratio);
     } finally {
       restore();
     }
@@ -215,7 +313,7 @@ export class ParityPair {
 
   /** Whether v6 renders into half-float targets. */
   get v6FloatTargets(): boolean {
-    return Reflect.get(this.v6, "_float") === true;
+    return this.v6.floatTargets;
   }
 
   /** skye's stats, e.g. to confirm which render targets it uses. */
@@ -225,62 +323,29 @@ export class ParityPair {
 
   /** The animation time of v6's next lightning strike, or -1 while none is scheduled. */
   get nextStrike(): number {
-    const bolt: unknown = Reflect.get(this.v6, "_bolt");
-    return typeof bolt === "object" && bolt !== null ? finiteNumber(Reflect.get(bolt, "next")) : -1;
+    return this.v6.nextStrike;
   }
 
   /** Merges new params into both, like `Sky.update`; v6 sees the merged set as attributes. */
   update(params: SkyeParams): void {
-    this.params = { ...this.params, ...params };
-    setV6Attributes(this.v6, this.params);
+    this.v6.update(params);
     this.sky.update(params);
-    // v6's attributeChangedCallback restarts its frame interval.
-    this.hasLastT = false;
   }
 
   /**
    * Changes the CSS size and device pixel ratio of both. v6's ResizeObserver
    * drops the cached target but leaves the frame interval running.
    */
-  resize(cssWidth: number, cssHeight: number, devicePixelRatio: number = this.ratio): void {
-    this.host.style.width = `${cssWidth}px`;
-    this.host.style.height = `${cssHeight}px`;
-    // Set what v6's ResizeObserver would record, so the next frame does not depend on observer timing.
-    Reflect.set(this.v6, "_cw", cssWidth);
-    Reflect.set(this.v6, "_ch", cssHeight);
-    Reflect.set(this.v6, "_envKey", "");
-    this.ratio = devicePixelRatio;
-    this.sky.resize(cssWidth, cssHeight, devicePixelRatio);
+  resize(cssWidth: number, cssHeight: number, devicePixelRatio?: number): void {
+    const ratio = devicePixelRatio ?? this.ratio;
+    this.v6.resize(cssWidth, cssHeight, ratio);
+    this.sky.resize(cssWidth, cssHeight, ratio);
+    this.ratio = ratio;
   }
 
   /** Draws one frame at animation time `t` (seconds) in both and reads both back. */
   frame(t: number): FramePair {
-    const isStatic = this.params.motion === "static";
-    const time = isStatic ? STATIC_TIME_S : t;
-    // v6's loop: 1/60 for the first frame (static frames pass nothing, which v6 also reads as 1/60), then the
-    // interval capped at 0.1 s. Its clock never runs backwards, so a backward step reaches it as no time at all.
-    const dt = isStatic || !this.hasLastT ? 1 / 60 : Math.min(0.1, Math.max(0, t - this.lastT));
-    this.lastT = t;
-    this.hasLastT = true;
-
-    Reflect.set(this.v6, "_now", () => time);
-    // v6's static path clears the eased state before each frame.
-    if (isStatic) Reflect.set(this.v6, "_cur", null);
-    this.flash = 0;
-    const random = Math.random;
-    Math.random = this.v6Random;
-    try {
-      withDevicePixelRatio(this.ratio, () => {
-        Reflect.apply(Reflect.get(this.v6, "renderFrame"), this.v6, [dt]);
-      });
-    } finally {
-      Math.random = random;
-    }
-    const a = readCanvas(this.v6Gl);
-    const bolt: unknown = Reflect.get(this.v6, "_bolt");
-    const boltStrength =
-      typeof bolt === "object" && bolt !== null ? finiteNumber(Reflect.get(bolt, "bolt")) : 0;
-
+    const a = this.v6.frame(t);
     this.sky.render(t);
     const b = readCanvas(this.skyGl);
     if (a.width !== b.width || a.height !== b.height) {
@@ -293,15 +358,14 @@ export class ParityPair {
       height: a.height,
       v6: a.pixels,
       skye: b.pixels,
-      flash: this.flash,
-      bolt: boltStrength,
+      flash: a.flash,
+      bolt: a.bolt,
     };
   }
 
   dispose(): void {
     this.sky.dispose();
     loseContext(this.skyGl);
-    loseContext(this.v6Gl);
-    this.host.remove();
+    this.v6.dispose();
   }
 }

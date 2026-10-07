@@ -1,26 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { SCENE_NAMES, createSky, type SkyeParams } from "../../src/index.ts";
+import { createSky, type SkyeParams } from "../../src/index.ts";
+import { BASE, CASES, SIZES } from "./cases.ts";
 import { compare, describeComparison } from "./compare.ts";
 import { ParityPair, whenReady } from "./harness.ts";
-
-const HOURS = [
-  { name: "night", hour: 2 },
-  { name: "dawn", hour: 6.5 },
-  { name: "noon", hour: 13 },
-  { name: "dusk", hour: 19.5 },
-] as const;
-
-// A small landscape box and a portrait one with odd sizes, so rounding in the buffer sizes is exercised.
-const SIZES = [
-  [320, 200],
-  [283, 419],
-] as const;
-
-const BASE: SkyeParams = { motion: "static", glass: true, quality: "balanced" };
-
-const CASES = SCENE_NAMES.flatMap((scene) =>
-  HOURS.map(({ name, hour }) => ({ scene, name, hour })),
-);
 
 describe.each(SIZES)("static parity with v6 at %ix%i", (width, height) => {
   let pair: ParityPair;

@@ -18,7 +18,7 @@
     "format:check": "bun scripts/format.ts --check",
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
-    "test:browser": "vitest run --project browser"
+    "test:browser": "vitest run --project browser --project browser-worker"
   },
   "peerDependencies": {
     "react": ">=19"
