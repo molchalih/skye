@@ -36,8 +36,17 @@ export interface SkyeElementEventMap extends HTMLElementEventMap, SkyeEventMap {
 
 const OBSERVED: readonly string[] = [...PARAM_ATTRIBUTES, "worker"];
 
+// A registry-wide name rather than a class identity: a second copy of skye on the page has its own SkyeElement, and
+// this is how either copy recognises the other's registrations.
+export const SKYE_BRAND: symbol = Symbol.for("skye.element");
+
+// Bumped when the element's contract changes incompatibly; copies only share a tag when their versions match.
+export const SKYE_BRAND_VERSION = 1;
+
 const STYLE =
   ":host{display:block;position:absolute;inset:0;width:100%;height:100%;overflow:hidden;background:#1a2440}" +
+  // The host's own display would otherwise beat the user-agent [hidden] rule.
+  ":host([hidden]){display:none}" +
   "canvas,div{position:absolute;inset:0;width:100%;height:100%;display:block}" +
   "div[hidden]{display:none}";
 
@@ -508,6 +517,9 @@ export class SkyeElement extends ElementBase {
     this.dispatchEvent(new CustomEvent(type, { bubbles: true, composed: true, detail }));
   }
 }
+
+// Defined on the class (inherited by every subclass) so either copy of skye can tell a skye element from any other.
+Object.defineProperty(SkyeElement, SKYE_BRAND, { value: SKYE_BRAND_VERSION });
 
 declare global {
   interface HTMLElementTagNameMap {

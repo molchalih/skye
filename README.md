@@ -118,7 +118,7 @@ import { Skye } from "skye/react";
 </div>;
 ```
 
-Props are the [param](#params) names (not the attribute names), plus `worker`, `ref` and the callbacks `onReady`, `onError`, `onContextLost`, `onContextRestored`, `onFallback` and `onTierChange`. The `ref` is the element. Standard HTML attributes (`id`, `className`, `style`, `title`, `role`, `hidden`, `tabIndex`, `aria-*`, `data-*` and DOM event handlers) go to the element as they would on any other; `onError` is skye's own. Boolean `aria-*` values are written as `"true"` or `"false"`. `useSkyeStats(ref, intervalMs)` polls `stats()` and returns `null` until a sky is running:
+Props are the [param](#params) names (not the attribute names), plus `worker`, `ref` and the callbacks `onReady`, `onError`, `onContextLost`, `onContextRestored`, `onFallback` and `onTierChange`. The `ref` is the element. Standard HTML attributes (`id`, `className`, `style`, `title`, `role`, `hidden` (which hides the element and pauses drawing), `tabIndex`, `aria-*`, `data-*` and DOM event handlers) go to the element as they would on any other; `onError` is skye's own. Boolean `aria-*` values are written as `"true"` or `"false"`. `useSkyeStats(ref, intervalMs)` polls `stats()` and returns `null` until a sky is running:
 
 ```tsx
 import { useRef } from "react";
