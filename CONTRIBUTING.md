@@ -55,28 +55,10 @@ type(scope): description
 
 ## Releases
 
-`changeset status` compares against the `main` branch, so that branch must exist.
-
-Releases use [Changesets](https://github.com/changesets/changesets).
+Releases use [Changesets](https://github.com/changesets/changesets) and publish from CI through npm trusted publishing, with provenance. Nothing is published by hand.
 
 1. A change that users can see adds a changeset with `bun run changeset`. Pick the bump (`patch`, `minor` or `major`) and describe the change for a reader of the changelog. Commit the generated file in `.changeset/` with the change.
-2. To release, run `bun run version-packages`. It bumps `package.json`, writes `CHANGELOG.md` and removes the consumed changesets. Commit the result.
-3. Publish from CI, not by hand (the first publish below is the one exception). `prepack` rebuilds `dist/` first.
+2. Run the `release` workflow on `main` (Actions, release, Run workflow). With changesets pending it opens a "version packages" pull request that bumps `package.json`, writes `CHANGELOG.md` and removes the consumed changesets.
+3. Review and merge that pull request, then run the `release` workflow on `main` again. With no changesets pending it publishes the new version to npm and tags it.
 
-While the version is below 1.0.0, a breaking change is a `minor` bump.
-
-### First release
-
-One-time setup, done by the owner:
-
-1. Make the GitHub repository public; npm provenance requires a public source repository.
-2. Create the `npm` environment in the repository settings (protect it as needed).
-3. Publish 0.1.0 by hand, since npm needs the package to exist before a trusted publisher can be added (no provenance for this one):
-   1. `bunx changeset version` bumps `package.json` to 0.1.0 and writes `CHANGELOG.md`, offline.
-   2. Review, commit and push the result.
-   3. `bun run check`.
-   4. `npm login`, then `npm publish` from that commit (`publishConfig` makes it public; `prepack` rebuilds `dist/`).
-4. On npmjs.com, add the `release` workflow as the package's trusted publisher, with environment `npm`.
-5. Enable Renovate on the repository.
-
-After that, a release is: add a changeset (`bun run changeset`), merge it, and run the `release` workflow on `main`.
+The workflow runs only from `main` and through the `npm` environment, which the package's trusted publisher on npm names. While the version is below 1.0.0, a breaking change is a `minor` bump. `changeset status` compares against the `main` branch.
