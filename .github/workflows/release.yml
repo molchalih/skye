@@ -1,5 +1,4 @@
-# Manual only, and refused while package.json is `"private": true`: publishing
-# is a later, explicit decision. Changesets opens the version pull request
+# Manual only: publishing is an explicit decision. Changesets opens the version pull request
 # while changesets are pending and publishes once they are consumed; npm
 # trusted publishing (OIDC) signs the provenance, so no npm token is stored.
 name: release
@@ -36,12 +35,6 @@ jobs:
           # Changesets pushes with the token itself; the action reads it from
           # its own input, so none is left in .git/config.
           persist-credentials: false
-      - name: Refuse while the package is private
-        run: |
-          if [ "$(jq -r '.private // false' package.json)" = "true" ]; then
-            echo "package.json has \"private\": true; remove it before the first release" >&2
-            exit 1
-          fi
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json

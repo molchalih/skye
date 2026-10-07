@@ -1,7 +1,6 @@
 {
   "name": "skye",
   "version": "0.0.0",
-  "private": true,
   "description": "A zero-dependency WebGL2 sky renderer",
   "license": "MIT",
   "type": "module",
@@ -44,6 +43,9 @@
     "README.md",
     "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "packageManager": "bun@1.4.2",
   "scripts": {
     "check": "bun run check:static && bun run check:browsers",

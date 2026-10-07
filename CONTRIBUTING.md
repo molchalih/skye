@@ -61,6 +61,22 @@ Releases use [Changesets](https://github.com/changesets/changesets).
 
 1. A change that users can see adds a changeset with `bun run changeset`. Pick the bump (`patch`, `minor` or `major`) and describe the change for a reader of the changelog. Commit the generated file in `.changeset/` with the change.
 2. To release, run `bun run version-packages`. It bumps `package.json`, writes `CHANGELOG.md` and removes the consumed changesets. Commit the result.
-3. Publish from CI, not by hand. `prepack` rebuilds `dist/` first.
+3. Publish from CI, not by hand (the first publish below is the one exception). `prepack` rebuilds `dist/` first.
 
 While the version is below 1.0.0, a breaking change is a `minor` bump.
+
+### First release
+
+One-time setup, done by the owner:
+
+1. Make the GitHub repository public; npm provenance requires a public source repository.
+2. Create the `npm` environment in the repository settings (protect it as needed).
+3. Publish 0.1.0 by hand, since npm needs the package to exist before a trusted publisher can be added (no provenance for this one):
+   1. `bunx changeset version` bumps `package.json` to 0.1.0 and writes `CHANGELOG.md`, offline.
+   2. Review, commit and push the result.
+   3. `bun run check`.
+   4. `npm login`, then `npm publish` from that commit (`publishConfig` makes it public; `prepack` rebuilds `dist/`).
+4. On npmjs.com, add the `release` workflow as the package's trusted publisher, with environment `npm`.
+5. Enable Renovate on the repository.
+
+After that, a release is: add a changeset (`bun run changeset`), merge it, and run the `release` workflow on `main`.
