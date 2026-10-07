@@ -42,7 +42,7 @@ The generator keeps v6's identifiers and numbers on purpose, so even a rename is
 
 ### Core bundle size: above v6's
 
-**Status:** recorded for the owner's review. The size check holds the core at the size it had when this was measured.
+**Status:** decided, 2026-10-07: the owner accepts the larger core for 0.1.0. The size check holds the core at the size it had when this was measured.
 
 The budget asked that `skye` (the core entry: `createSky`, params, types) stay within v6's minified, brotli-compressed size. It does not. All figures are minified, then compressed with brotli at quality 11.
 
@@ -90,3 +90,5 @@ The shaders are smaller, because comments and redundant whitespace are stripped.
 Even every remaining item together leaves the core more than 2.5 KB over v6's size, so those were not applied: each costs more in code or risk than its share of a gap it cannot close.
 
 **The decision to take.** One option is to accept the larger core for the behaviour above; the size check (`bun run size`) then holds it at 17.25 kB. The other is to ask for a restructuring of the core aimed at size. That would be its own piece of work, with its own parity run.
+
+The owner took the first option on 2026-10-07: the 17.1 kB core (v6: 14.1 kB) is accepted for 0.1.0, and no size restructuring is planned for it.
