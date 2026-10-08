@@ -1,0 +1,72 @@
+# Builds the showcase in site/ from this commit's own source and publishes it to GitHub Pages. Every push to main
+# that changes the page, the renderer or the toolchain publishes it again, so the page always shows the renderer
+# on main, and the Copy button names the version package.json carries. A pull request that touches the same files
+# builds the page without publishing it. Pages must be set to deploy from GitHub Actions (Settings, Pages,
+# Source); the owner does that once.
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "src/**"
+      - "scripts/**"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/pages.yml"
+  pull_request:
+    paths:
+      - "site/**"
+      - "src/**"
+      - "scripts/**"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch: {}
+
+# Least privilege at the top; the deploy job widens what it needs.
+permissions:
+  contents: read
+
+# A newer push to a pull request supersedes its running build. Publishing runs one at a time and is never
+# cancelled halfway; a newer push to main waits for it, then publishes the newer page.
+concurrency:
+  group: pages-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # Every action is pinned to a commit SHA; the comment names its release.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bun run site:build
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site/dist
+
+  deploy:
+    name: deploy
+    needs: build
+    # Only main publishes, whatever ref a manual run was started on.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write # the deployment itself
+      id-token: write # the OIDC token Pages checks the deployment's origin with
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

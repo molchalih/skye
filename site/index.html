@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en" data-ink="dark" class="is-booting">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>skye — a WebGL2 sky renderer</title>
+    <meta
+      name="description"
+      content="skye draws weather skies in WebGL2: clouds, sun, moon, stars and rain on glass. Move the sun, change the weather, copy the markup."
+    />
+    <meta name="theme-color" content="#c9d4e4" />
+    <meta property="og:title" content="skye — a WebGL2 sky renderer" />
+    <meta property="og:description" content="Move the sun, change the weather, copy the markup." />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&family=Geist:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+
+    <script type="module" src="./main.ts"></script>
+  </head>
+
+  <body>
+    <div class="stage" id="stage">
+      <skye-view id="sky"></skye-view>
+    </div>
+    <div class="veil" aria-hidden="true"></div>
+
+    <div class="ui">
+      <header class="bar">
+        <h1 class="mark">skye</h1>
+        <nav class="links" aria-label="Project">
+          <button
+            class="install"
+            type="button"
+            data-copy="npm i @a240/skye"
+            data-copied="skye loves u!"
+            title="Copy the install command"
+          >
+            npm i @a240/skye
+          </button>
+          <a href="https://github.com/molchalih/skye">GitHub</a>
+        </nav>
+      </header>
+
+      <p class="hint" id="hint" aria-hidden="true">
+        <span>Drag the sky</span>
+        <span>sideways for time, up and down for clouds</span>
+      </p>
+
+      <main class="report">
+        <p class="clock" id="clock"></p>
+        <p class="prose" id="prose">
+          A <span class="token" data-key="scene"></span> <span data-text="daypart"></span> on
+          <span class="token" data-key="dayOfYear"></span> at
+          <span class="token" data-key="latitude"></span><span data-text="place"></span>. Clouds
+          cover <span class="token" data-key="cover"></span> of the sky<span data-clause="intensity"
+            >, <span data-text="lead"></span> <span class="token" data-key="intensity"></span></span
+          >, and the moon is <span class="token" data-key="moonPhase"></span
+          ><svg class="moon" viewBox="-1 -1 2 2" aria-hidden="true">
+            <circle r="0.94" />
+            <path />
+          </svg>
+        </p>
+      </main>
+
+      <div class="ruler" id="ruler" role="slider" tabindex="0" aria-label="Time of day">
+        <div class="ruler-sun">
+          <span data-sun="rise"></span>
+          <span data-sun="set"></span>
+          <span data-sun="polar"></span>
+        </div>
+        <div class="ruler-track">
+          <div class="ruler-light"></div>
+          <div class="ruler-mark"></div>
+        </div>
+        <div class="ruler-ticks" aria-hidden="true">
+          <span>00</span><span>06</span><span>12</span><span>18</span><span>24</span>
+        </div>
+      </div>
+
+      <footer class="dock">
+        <div class="snippet">
+          <code id="code" tabindex="0" aria-label="Markup for this sky"></code>
+          <button
+            type="button"
+            id="copy-html"
+            data-cdn="https://cdn.jsdelivr.net/npm/@a240/skye@__SKYE_VERSION__/dist/define.js"
+            title="Copy a working HTML snippet"
+          >
+            Copy
+          </button>
+        </div>
+        <div class="actions">
+          <button
+            type="button"
+            id="play"
+            aria-pressed="false"
+            aria-keyshortcuts="Space"
+            title="Let the day pass (Space)"
+          >
+            Play
+          </button>
+          <button type="button" id="shuffle" aria-keyshortcuts="S" title="Visit another sky (S)">
+            Shuffle
+          </button>
+          <button
+            type="button"
+            id="now"
+            aria-keyshortcuts="N"
+            title="Your sky right now: your clock, today's moon, and your latitude where the browser shares it (N)"
+          >
+            Now
+          </button>
+          <button
+            type="button"
+            id="tune"
+            class="gear"
+            aria-label="Tune"
+            aria-expanded="false"
+            aria-controls="panel"
+            aria-keyshortcuts="T"
+            title="Tune: wind, lens and renderer (T)"
+          >
+            <svg viewBox="-12 -12 24 24" aria-hidden="true">
+              <path
+                d="M6.76 -1.81 L9.28 -1.47 L9.28 1.47 L6.76 1.81 L6.06 3.50 L7.60 5.53 L5.53 7.60 L3.50 6.06 L1.81 6.76 L1.47 9.28 L-1.47 9.28 L-1.81 6.76 L-3.50 6.06 L-5.53 7.60 L-7.60 5.53 L-6.06 3.50 L-6.76 1.81 L-9.28 1.47 L-9.28 -1.47 L-6.76 -1.81 L-6.06 -3.50 L-7.60 -5.53 L-5.53 -7.60 L-3.50 -6.06 L-1.81 -6.76 L-1.47 -9.28 L1.47 -9.28 L1.81 -6.76 L3.50 -6.06 L5.53 -7.60 L7.60 -5.53 L6.06 -3.50Z"
+              />
+              <circle r="3.2" />
+            </svg>
+          </button>
+        </div>
+      </footer>
+    </div>
+
+    <aside class="panel" id="panel" aria-labelledby="panel-title" hidden>
+      <header class="panel-head">
+        <h2 id="panel-title">Tune</h2>
+        <button type="button" class="close" data-close aria-label="Close">×</button>
+      </header>
+
+      <section>
+        <h3>Air</h3>
+        <div class="row">
+          <label for="t-wind">Wind</label>
+          <span class="value">
+            <output data-for="wind"></output>
+            <button type="button" class="chip" data-auto="wind" aria-pressed="true">auto</button>
+          </span>
+          <input id="t-wind" name="wind" type="range" min="0" max="6" step="0.1" />
+        </div>
+        <div class="row">
+          <label for="t-seed">Cloud pattern</label>
+          <output data-for="seed"></output>
+          <input id="t-seed" name="seed" type="range" min="0" max="40" step="0.01" />
+        </div>
+        <div class="row">
+          <label for="t-noon">Solar noon</label>
+          <output data-for="solarNoon"></output>
+          <input id="t-noon" name="solarNoon" type="range" min="10.5" max="15" step="0.05" />
+        </div>
+      </section>
+
+      <section>
+        <h3>Lens</h3>
+        <div class="row is-switch">
+          <label for="t-glass">Window glass</label>
+          <input id="t-glass" name="glass" type="checkbox" role="switch" />
+        </div>
+        <div class="row">
+          <label for="t-focus">Glass focus</label>
+          <output data-for="focus"></output>
+          <input id="t-focus" name="focus" type="range" min="0.12" max="1" step="0.01" />
+        </div>
+        <div class="row">
+          <label for="t-exposure">Exposure</label>
+          <output data-for="exposure"></output>
+          <input id="t-exposure" name="exposure" type="range" min="0.2" max="1.2" step="0.01" />
+        </div>
+        <div class="row">
+          <label for="t-blur">Background blur</label>
+          <output data-for="blur"></output>
+          <input id="t-blur" name="blur" type="range" min="0" max="64" step="1" />
+        </div>
+      </section>
+
+      <section>
+        <h3>Renderer</h3>
+        <fieldset class="choice">
+          <legend>Quality</legend>
+          <label><input type="radio" name="quality" value="auto" />auto</label>
+          <label><input type="radio" name="quality" value="low" />low</label>
+          <label><input type="radio" name="quality" value="balanced" />balanced</label>
+          <label><input type="radio" name="quality" value="high" />high</label>
+        </fieldset>
+        <fieldset class="choice">
+          <legend>Motion</legend>
+          <label><input type="radio" name="motion" value="auto" />auto</label>
+          <label><input type="radio" name="motion" value="full" />full</label>
+          <label><input type="radio" name="motion" value="static" />static</label>
+        </fieldset>
+      </section>
+
+      <footer class="panel-foot">
+        <output id="stats">starting…</output>
+        <p class="keys">
+          <kbd>Space</kbd> play · <kbd>←</kbd><kbd>→</kbd> time · <kbd>↑</kbd><kbd>↓</kbd> clouds ·
+          <kbd>1</kbd>–<kbd>8</kbd> weather · <kbd>S</kbd> shuffle
+        </p>
+      </footer>
+    </aside>
+
+    <div class="menu" id="scene-menu" popover role="menu" aria-label="Weather"></div>
+    <div class="readout" id="readout" aria-hidden="true"></div>
+
+    <noscript><p class="noscript">This page draws its sky with JavaScript and WebGL2.</p></noscript>
+  </body>
+</html>

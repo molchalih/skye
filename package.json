@@ -73,6 +73,8 @@
     "check:browsers": "bun run test:browser && bun run test:consumers",
     "shaders": "bun scripts/shaders.ts",
     "bench": "bun run shaders && vite bench",
+    "site": "bun run shaders && vite site",
+    "site:build": "bun run shaders && vite build site",
     "build": "bun run shaders && tsdown && cem analyze --quiet",
     "prepack": "bun run build",
     "check:package": "publint --strict && attw --pack . --profile esm-only",

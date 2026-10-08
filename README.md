@@ -4,6 +4,8 @@ A zero-dependency WebGL2 sky renderer. It draws weather scenes (clear, cloudy, f
 
 skye is a pure renderer. It never reads the clock or the calendar and never fetches weather. You pass every input: the scene, the hour, the day of the year, the moon phase.
 
+[Try it live](https://molchalih.github.io/skye/): change the weather, the time and the place, and copy the markup for the sky you made.
+
 - [Install](#install)
 - [Quick start](#quick-start)
 - [Worker mode](#worker-mode)

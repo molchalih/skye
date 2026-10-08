@@ -18,7 +18,7 @@ The tests run in real browsers through Playwright, so all three engines must be 
 | Step             | What it checks                                                                                                     |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------ |
 | `lint`           | oxlint with type-aware rules, after generating the shaders                                                         |
-| `typecheck`      | `tsc -b`, strict, over `src`, `scripts`, `test` and `bench`                                                        |
+| `typecheck`      | `tsc -b`, strict, over `src`, `scripts`, `test`, `bench` and `site`                                                |
 | `format:check`   | prettier (`bun run format` fixes it)                                                                               |
 | `test:unit`      | unit tests in Node                                                                                                 |
 | `build`          | shader generation, tsdown (minified, with source maps), and the custom elements manifest                           |
@@ -30,6 +30,8 @@ The tests run in real browsers through Playwright, so all three engines must be 
 While you work, run the part you need: `bun run test:unit`, `bun run test:browser`, `bun run test:consumers`.
 
 `bun run bench` opens a benchmark page, a manual tool that `check` does not run. The stage defaults to 1280×960 CSS px; change it with `?w=` and `?h=`. The page prints a Markdown table (Tier, Mode, Scene, GPU ms, CPU ms, fps, Mpx, Method, Status) to paste into docs. In main-thread mode it drives the core with GPU timing on, so every tier has a GPU time; worker mode drives `<skye-view>`, which times the GPU only under `quality="auto"`.
+
+`bun run site` serves the showcase page in `site/`, which, like the bench, imports skye from source; `bun run site:build` writes it to `site/dist`. The `pages` workflow builds it for every pull request that touches it and publishes it to GitHub Pages from `main` whenever the page, the renderer or the toolchain changes. The owner sets Pages to deploy from GitHub Actions once (Settings, Pages, Source).
 
 ## Pixel parity
 
