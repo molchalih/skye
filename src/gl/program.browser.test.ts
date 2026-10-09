@@ -13,55 +13,71 @@ function context(): WebGL2RenderingContext {
   return gl;
 }
 
+// Records the values of each upload as it is made: the uniforms reuse their arrays, so a spy's record of the
+// arguments would show later values.
+function record(gl: WebGL2RenderingContext, method: "uniform1fv" | "uniform3fv"): number[][] {
+  const sent: number[][] = [];
+  const upload = gl[method].bind(gl);
+  vi.spyOn(gl, method).mockImplementation((location, data, offset = 0, length = 0) => {
+    sent.push(Array.from(data).slice(offset, length === 0 ? undefined : offset + length));
+    upload(location, data, offset, length);
+  });
+  return sent;
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
 describe("Program", () => {
-  it("skips uploads whose float32 value is unchanged", () => {
+  it("uploads each value once, until its float32 bits change", () => {
     const gl = context();
     const p = new Program(gl, VS, FS);
-    const a = p.uniform("uA");
-    const b = p.uniform("uB");
-    const n = p.uniform("uN");
+    const a = p.float("uA");
+    const b = p.vec3("uB");
+    const n = p.int("uN");
     p.finish();
     p.use();
-    const f1 = vi.spyOn(gl, "uniform1f");
-    const f3 = vi.spyOn(gl, "uniform3f");
-    const i1 = vi.spyOn(gl, "uniform1i");
-    a.float(0.1);
-    a.float(0.1);
-    // Rounds to the same float32 as 0.1.
-    a.float(0.1 + 1e-12);
-    a.float(0.2);
-    a.float(-0);
-    a.float(0);
-    b.vec3(1, 2, 3);
-    b.vec3(1, 2, 3);
-    b.vec3(1, 2, 4);
-    n.int(3);
-    n.int(3);
-    n.int(4);
-    expect(f1.mock.calls).toEqual([
-      [expect.anything(), 0.1],
-      [expect.anything(), 0.2],
-      [expect.anything(), -0],
-      [expect.anything(), 0],
+    const floats = record(gl, "uniform1fv");
+    const vectors = record(gl, "uniform3fv");
+    const ints = vi.spyOn(gl, "uniform1i");
+    const upload = (x: number, v: readonly number[], i: number): void => {
+      a.value = x;
+      b.value.set(v);
+      n.value = i;
+      p.upload();
+    };
+    // Linking sets every uniform to 0, so nothing goes out while every value is still 0.
+    upload(0, [0, 0, 0], 0);
+    expect([floats, vectors, ints.mock.calls]).toEqual([[], [], []]);
+    upload(0.1, [1, 2, 3], 3);
+    // 0.1 + 1e-12 rounds to the same float32 as 0.1.
+    upload(0.1 + 1e-12, [1, 2, 3], 3);
+    upload(0.2, [1, 2, 4], 4);
+    // -0 and 0 have different bits.
+    upload(-0, [1, 2, 4], 4);
+    upload(0, [1, 2, 4], 4);
+    expect(floats).toEqual([[Math.fround(0.1)], [Math.fround(0.2)], [-0], [0]]);
+    expect(vectors).toEqual([
+      [1, 2, 3],
+      [1, 2, 4],
     ]);
-    expect(f3).toHaveBeenCalledTimes(2);
-    expect(i1).toHaveBeenCalledTimes(2);
-    const loc = gl.getUniformLocation(p.program, "uA");
-    expect(loc === null ? null : gl.getUniform(p.program, loc)).toBe(0);
+    expect(ints.mock.calls.map(([, i]) => i)).toEqual([3, 4]);
+    const loc = gl.getUniformLocation(p.program, "uB");
+    expect(loc === null ? null : gl.getUniform(p.program, loc)).toEqual(
+      new Float32Array([1, 2, 4]),
+    );
   });
 
-  it("ignores writes to uniforms the compiler removed", () => {
+  it("ignores values of uniforms the compiler removed", () => {
     const gl = context();
     const p = new Program(gl, VS, FS);
-    const unused = p.uniform("uUnused");
+    const unused = p.float("uUnused");
     p.finish();
     p.use();
-    const f1 = vi.spyOn(gl, "uniform1f");
-    unused.float(1);
+    const f1 = vi.spyOn(gl, "uniform1fv");
+    unused.value = 1;
+    p.upload();
     expect(f1).not.toHaveBeenCalled();
     expect(gl.getError()).toBe(gl.NO_ERROR);
   });

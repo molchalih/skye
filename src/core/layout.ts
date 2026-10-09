@@ -66,10 +66,14 @@ export function createLayout(): Layout {
   };
 }
 
-// Smallest chain scale that still leaves sigma >= 1.6 buffer px, else full resolution.
+// Smallest chain scale that still leaves sigma >= 1.6 buffer px, else full resolution. An indexed loop, since this
+// runs every frame and V8's mid tier keeps a for-of iterator.
 function stepFor(s: number): number {
   if (s > 0.3) {
-    for (const x of BQ_STEPS) if (x * s >= 1.6) return x;
+    for (let i = 0; i < BQ_STEPS.length; i++) {
+      const x = BQ_STEPS[i];
+      if (x !== undefined && x * s >= 1.6) return x;
+    }
   }
   return 1;
 }

@@ -2,27 +2,27 @@ import { mix } from "../core/math.ts";
 import type { Gpu } from "../gl/context.ts";
 import type { Program } from "../gl/program.ts";
 import type { Target } from "../gl/target.ts";
-import { PARTICLES_FS, PARTICLES_VS } from "../shaders/generated.ts";
+import * as glsl from "../shaders/generated.ts";
 import type { PassFrame } from "./frame.ts";
 
 function declareUniforms(p: Program) {
   return {
-    uMode: p.uniform("uMode"),
-    uTime: p.uniform("uTime"),
-    uWindT: p.uniform("uWindT"),
-    uWindNow: p.uniform("uWindNow"),
-    uAsp: p.uniform("uAsp"),
-    uFocus: p.uniform("uFocus"),
-    uSeed: p.uniform("uSeed"),
-    uSize: p.uniform("uSize"),
-    uInt: p.uniform("uInt"),
-    uFlash: p.uniform("uFlash"),
-    uEnc: p.uniform("uEnc"),
-    uSleet: p.uniform("uSleet"),
-    uHorizon: p.uniform("uHorizon"),
-    uZenith: p.uniform("uZenith"),
-    uLCol: p.uniform("uLCol"),
-    uLPos: p.uniform("uLPos"),
+    uMode: p.float(glsl.PARTICLES_uMode),
+    uTime: p.float(glsl.PARTICLES_uTime),
+    uWindT: p.float(glsl.PARTICLES_uWindT),
+    uWindNow: p.float(glsl.PARTICLES_uWindNow),
+    uAsp: p.float(glsl.PARTICLES_uAsp),
+    uFocus: p.float(glsl.PARTICLES_uFocus),
+    uSeed: p.float(glsl.PARTICLES_uSeed),
+    uSize: p.float(glsl.PARTICLES_uSize),
+    uInt: p.float(glsl.PARTICLES_uInt),
+    uFlash: p.float(glsl.PARTICLES_uFlash),
+    uEnc: p.float(glsl.PARTICLES_uEnc),
+    uSleet: p.float(glsl.PARTICLES_uSleet),
+    uHorizon: p.vec3(glsl.PARTICLES_uHorizon),
+    uZenith: p.vec3(glsl.PARTICLES_uZenith),
+    uLCol: p.vec3(glsl.PARTICLES_uLCol),
+    uLPos: p.vec2(glsl.PARTICLES_uLPos),
   };
 }
 
@@ -36,7 +36,7 @@ export class ParticlesPass {
   readonly #u: ReturnType<typeof declareUniforms>;
 
   constructor(gpu: Gpu) {
-    this.program = gpu.program(PARTICLES_VS, PARTICLES_FS);
+    this.program = gpu.program(glsl.PARTICLES_VS, glsl.PARTICLES_FS);
     this.#u = declareUniforms(this.program);
   }
 
@@ -52,21 +52,21 @@ export class ParticlesPass {
     this.program.use();
     gpu.bindOutput(out, l.sceneWidth, l.sceneHeight);
     gpu.blend(true);
-    u.uTime.float(f.time);
-    u.uWindT.float(f.windT);
-    u.uWindNow.float(f.windNow);
-    u.uAsp.float(s.aspect);
-    u.uFocus.float(s.focus);
-    u.uSeed.float(s.seed);
-    u.uSize.float(1);
-    u.uInt.float(s.intensity);
-    u.uFlash.float(f.flash);
-    u.uEnc.float(f.enc);
-    u.uSleet.float(s.sleet);
-    u.uHorizon.vec3(s.horizon[0], s.horizon[1], s.horizon[2]);
-    u.uZenith.vec3(s.zenith[0], s.zenith[1], s.zenith[2]);
-    u.uLCol.vec3(s.lightColor[0], s.lightColor[1], s.lightColor[2]);
-    u.uLPos.vec2(s.lightPos[0], s.lightPos[1]);
+    u.uTime.value = f.time;
+    u.uWindT.value = f.windT;
+    u.uWindNow.value = f.windNow;
+    u.uAsp.value = s.aspect;
+    u.uFocus.value = s.focus;
+    u.uSeed.value = s.seed;
+    u.uSize.value = 1;
+    u.uInt.value = s.intensity;
+    u.uFlash.value = f.flash;
+    u.uEnc.value = f.enc;
+    u.uSleet.value = s.sleet;
+    u.uHorizon.value.set(s.horizon);
+    u.uZenith.value.set(s.zenith);
+    u.uLCol.value.set(s.lightColor);
+    u.uLPos.value.set(s.lightPos);
     if (rain >= 0) this.#drawMode(gpu, RAIN, rain);
     if (snow >= 0) this.#drawMode(gpu, SNOW, snow);
     if (dust >= 0) this.#drawMode(gpu, DUST, dust);
@@ -75,7 +75,7 @@ export class ParticlesPass {
   }
 
   #drawMode(gpu: Gpu, mode: number, count: number): void {
-    this.#u.uMode.float(mode);
-    gpu.drawQuads(Math.max(1, count));
+    this.#u.uMode.value = mode;
+    gpu.drawQuads(this.program, Math.max(1, count));
   }
 }

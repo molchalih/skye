@@ -1,47 +1,47 @@
 import type { Gpu } from "../gl/context.ts";
 import type { Program } from "../gl/program.ts";
 import type { Target } from "../gl/target.ts";
-import { FULLSCREEN_VS, SKY_FS } from "../shaders/generated.ts";
+import * as glsl from "../shaders/generated.ts";
 import type { PassFrame } from "./frame.ts";
 
 function declareUniforms(p: Program) {
   return {
-    uRes: p.uniform("uRes"),
-    uSunPos: p.uniform("uSunPos"),
-    uMoonPos: p.uniform("uMoonPos"),
-    uLPos: p.uniform("uLPos"),
-    uFlashPos: p.uniform("uFlashPos"),
-    uASun: p.uniform("uASun"),
-    uBoltPos: p.uniform("uBoltPos"),
-    uTime: p.uniform("uTime"),
-    uWindT: p.uniform("uWindT"),
-    uCover: p.uniform("uCover"),
-    uSeed: p.uniform("uSeed"),
-    uNight: p.uniform("uNight"),
-    uFlash: p.uniform("uFlash"),
-    uCloudDark: p.uniform("uCloudDark"),
-    uEl: p.uniform("uEl"),
-    uSunUp: p.uniform("uSunUp"),
-    uRainy: p.uniform("uRainy"),
-    uSnowy: p.uniform("uSnowy"),
-    uEnc: p.uniform("uEnc"),
-    uFog: p.uniform("uFog"),
-    uHaze: p.uniform("uHaze"),
-    uBolt: p.uniform("uBolt"),
-    uBoltSeed: p.uniform("uBoltSeed"),
-    uRainbow: p.uniform("uRainbow"),
-    uMoonPhase: p.uniform("uMoonPhase"),
-    uBelt: p.uniform("uBelt"),
-    uStar: p.uniform("uStar"),
-    uStorm: p.uniform("uStorm"),
-    uSunCol: p.uniform("uSunCol"),
-    uMoonCol: p.uniform("uMoonCol"),
-    uLCol: p.uniform("uLCol"),
-    uZenith: p.uniform("uZenith"),
-    uHorizon: p.uniform("uHorizon"),
-    uStart: p.uniform("uStart"),
-    uEnd: p.uniform("uEnd"),
-    uOctCap: p.uniform("uOctCap"),
+    uRes: p.vec2(glsl.SKY_uRes),
+    uSunPos: p.vec2(glsl.SKY_uSunPos),
+    uMoonPos: p.vec2(glsl.SKY_uMoonPos),
+    uLPos: p.vec2(glsl.SKY_uLPos),
+    uFlashPos: p.vec2(glsl.SKY_uFlashPos),
+    uASun: p.vec2(glsl.SKY_uASun),
+    uBoltPos: p.vec2(glsl.SKY_uBoltPos),
+    uTime: p.float(glsl.SKY_uTime),
+    uWindT: p.float(glsl.SKY_uWindT),
+    uCover: p.float(glsl.SKY_uCover),
+    uSeed: p.float(glsl.SKY_uSeed),
+    uNight: p.float(glsl.SKY_uNight),
+    uFlash: p.float(glsl.SKY_uFlash),
+    uCloudDark: p.float(glsl.SKY_uCloudDark),
+    uEl: p.float(glsl.SKY_uEl),
+    uSunUp: p.float(glsl.SKY_uSunUp),
+    uRainy: p.float(glsl.SKY_uRainy),
+    uSnowy: p.float(glsl.SKY_uSnowy),
+    uEnc: p.float(glsl.SKY_uEnc),
+    uFog: p.float(glsl.SKY_uFog),
+    uHaze: p.float(glsl.SKY_uHaze),
+    uBolt: p.float(glsl.SKY_uBolt),
+    uBoltSeed: p.float(glsl.SKY_uBoltSeed),
+    uRainbow: p.float(glsl.SKY_uRainbow),
+    uMoonPhase: p.float(glsl.SKY_uMoonPhase),
+    uBelt: p.float(glsl.SKY_uBelt),
+    uStar: p.float(glsl.SKY_uStar),
+    uStorm: p.float(glsl.SKY_uStorm),
+    uSunCol: p.vec3(glsl.SKY_uSunCol),
+    uMoonCol: p.vec3(glsl.SKY_uMoonCol),
+    uLCol: p.vec3(glsl.SKY_uLCol),
+    uZenith: p.vec3(glsl.SKY_uZenith),
+    uHorizon: p.vec3(glsl.SKY_uHorizon),
+    uStart: p.int(glsl.SKY_uStart),
+    uEnd: p.int(glsl.SKY_uEnd),
+    uOctCap: p.int(glsl.SKY_uOctCap),
   };
 }
 
@@ -51,7 +51,7 @@ export class SkyPass {
   readonly #u: ReturnType<typeof declareUniforms>;
 
   constructor(gpu: Gpu) {
-    this.program = gpu.program(FULLSCREEN_VS, SKY_FS);
+    this.program = gpu.program(glsl.FULLSCREEN_VS, glsl.SKY_FS);
     this.#u = declareUniforms(this.program);
   }
 
@@ -61,43 +61,44 @@ export class SkyPass {
     this.program.use();
     gpu.bindOutput(out, l.skyWidth, l.skyHeight);
     gpu.blend(false);
-    u.uRes.vec2(l.skyWidth, l.skyHeight);
-    u.uSunPos.vec2(s.sunPos[0], s.sunPos[1]);
-    u.uMoonPos.vec2(s.moonPos[0], s.moonPos[1]);
-    u.uLPos.vec2(s.lightPos[0], s.lightPos[1]);
-    u.uFlashPos.vec2(b.position[0], b.position[1]);
-    u.uASun.vec2(s.antiSunPos[0], s.antiSunPos[1]);
-    u.uBoltPos.vec2(b.position[0], b.position[1]);
-    u.uTime.float(f.time);
-    u.uWindT.float(f.windT);
-    u.uCover.float(s.cover);
-    u.uSeed.float(s.seed);
-    u.uNight.float(s.night);
-    u.uFlash.float(f.flash);
-    u.uCloudDark.float(s.cloudDark);
-    u.uEl.float(s.sinElevation);
-    u.uSunUp.float(s.sunUp);
-    u.uRainy.float(s.rain * s.intensity);
-    u.uSnowy.float(s.snow * s.intensity);
-    u.uEnc.float(f.enc);
-    u.uFog.float(s.fog);
-    u.uHaze.float(s.haze);
-    u.uBolt.float(b.bolt);
-    u.uBoltSeed.float(b.seed);
-    u.uRainbow.float(s.rainbow);
-    u.uMoonPhase.float(s.moonPhase);
-    u.uBelt.float(s.belt);
-    u.uStar.float(s.star);
-    u.uStorm.float(s.storm);
-    u.uSunCol.vec3(s.sunColor[0], s.sunColor[1], s.sunColor[2]);
-    u.uMoonCol.vec3(s.moonColor[0], s.moonColor[1], s.moonColor[2]);
-    u.uLCol.vec3(s.lightColor[0], s.lightColor[1], s.lightColor[2]);
-    u.uZenith.vec3(s.zenith[0], s.zenith[1], s.zenith[2]);
-    u.uHorizon.vec3(s.horizon[0], s.horizon[1], s.horizon[2]);
-    u.uStart.int(q.start);
-    u.uEnd.int(q.end);
-    u.uOctCap.int(q.oct);
-    gpu.drawFullscreen();
+    u.uRes.value[0] = l.skyWidth;
+    u.uRes.value[1] = l.skyHeight;
+    u.uSunPos.value.set(s.sunPos);
+    u.uMoonPos.value.set(s.moonPos);
+    u.uLPos.value.set(s.lightPos);
+    u.uFlashPos.value.set(b.position);
+    u.uASun.value.set(s.antiSunPos);
+    u.uBoltPos.value.set(b.position);
+    u.uTime.value = f.time;
+    u.uWindT.value = f.windT;
+    u.uCover.value = s.cover;
+    u.uSeed.value = s.seed;
+    u.uNight.value = s.night;
+    u.uFlash.value = f.flash;
+    u.uCloudDark.value = s.cloudDark;
+    u.uEl.value = s.sinElevation;
+    u.uSunUp.value = s.sunUp;
+    u.uRainy.value = s.rain * s.intensity;
+    u.uSnowy.value = s.snow * s.intensity;
+    u.uEnc.value = f.enc;
+    u.uFog.value = s.fog;
+    u.uHaze.value = s.haze;
+    u.uBolt.value = b.bolt;
+    u.uBoltSeed.value = b.seed;
+    u.uRainbow.value = s.rainbow;
+    u.uMoonPhase.value = s.moonPhase;
+    u.uBelt.value = s.belt;
+    u.uStar.value = s.star;
+    u.uStorm.value = s.storm;
+    u.uSunCol.value.set(s.sunColor);
+    u.uMoonCol.value.set(s.moonColor);
+    u.uLCol.value.set(s.lightColor);
+    u.uZenith.value.set(s.zenith);
+    u.uHorizon.value.set(s.horizon);
+    u.uStart.value = q.start;
+    u.uEnd.value = q.end;
+    u.uOctCap.value = q.oct;
+    gpu.drawFullscreen(this.program);
     f.pixels += l.skyWidth * l.skyHeight;
     f.passes++;
   }

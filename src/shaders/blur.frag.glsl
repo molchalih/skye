@@ -1,4 +1,4 @@
-// Separable 13-tap Gaussian (7 bilinear fetches) over a sub-rect of a canvas-sized texture.
+// Separable 13-tap Gaussian (7 bilinear fetches) over a sub-rect of a texture.
 #version 300 es
 precision highp float;
 uniform sampler2D uTex; uniform vec2 uDir, uSub, uTexel; uniform vec4 uW; uniform vec3 uO;

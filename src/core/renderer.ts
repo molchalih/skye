@@ -19,10 +19,14 @@ const FIRST_DT = 1 / 60;
 const MAX_DT = 0.1;
 const POLL_MS = 16;
 
-// A loop rather than find(): this runs every frame and must not allocate a callback.
+// An indexed loop rather than find() or for-of: this runs every frame and must allocate neither a callback nor an
+// iterator, which V8's mid tier keeps.
 function tierOf(quality: Quality, autoTier: number): TierDef {
   if (quality === "auto") return TIERS[autoTier] ?? TIERS[1];
-  for (const t of TIERS) if (t.name === quality) return t;
+  for (let i = 0; i < TIERS.length; i++) {
+    const t = TIERS[i];
+    if (t?.name === quality) return t;
+  }
   return TIERS[1];
 }
 
@@ -288,8 +292,10 @@ class SkyRenderer implements Sky {
       this.#canvas.width = l.canvasWidth;
       this.#canvas.height = l.canvasHeight;
     }
-    const { pipeline, timer } = this.#res;
+    const { gpu, pipeline, timer } = this.#res;
     pipeline.allocate(l);
+    // After allocating, which binds textures behind the bind cache.
+    gpu.beginFrame();
 
     const f = this.#frame;
     f.flash = this.#lightning.step(time, state, this.#random);

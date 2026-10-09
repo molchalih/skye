@@ -61,14 +61,21 @@ export class Pipeline {
     for (const p of this.#programs) p.finish();
   }
 
-  /** Sizes the targets for this frame's layout; only changed sizes reallocate. */
+  /**
+   * Sizes the targets for this frame's layout; only changed sizes reallocate.
+   * Allocating binds textures behind `Gpu`'s bind cache, so it runs before the frame's `beginFrame`.
+   */
   allocate(l: Readonly<Layout>): void {
     this.#skyTarget.resize(l.skyWidth, l.skyHeight);
     this.#raysTarget.resize(l.skyWidth, l.skyHeight);
     this.#sceneTarget.resize(l.sceneWidth, l.sceneHeight);
-    // The blur ping-pong targets stay full size so the first blurred frame never pays an allocation.
-    this.#blurA.resize(l.width, l.height);
-    this.#blurB.resize(l.width, l.height);
+    // The blur targets hold storage only while the blur chain runs. While it fades they are full size, as v6's
+    // always are, since the glass draws there at full size; once it settles they shrink to the chain size. The
+    // tween is monotone, so a fade allocates once on its way in and frees once on its way out.
+    const width = l.blurring ? (l.shrink ? l.blurWidth : l.width) : 0;
+    const height = l.blurring ? (l.shrink ? l.blurHeight : l.height) : 0;
+    this.#blurA.resize(width, height);
+    this.#blurB.resize(width, height);
   }
 
   draw(f: PassFrame): void {

@@ -1,30 +1,29 @@
 import type { Gpu } from "../gl/context.ts";
 import type { Program } from "../gl/program.ts";
 import type { Target } from "../gl/target.ts";
-import { FULLSCREEN_VS, GLASS_FS } from "../shaders/generated.ts";
+import * as glsl from "../shaders/generated.ts";
 import type { PassFrame } from "./frame.ts";
 import { raysActive } from "./rays.ts";
 
 function declareUniforms(p: Program) {
   return {
-    uScene: p.uniform("uScene"),
-    uRaysTex: p.uniform("uRaysTex"),
-    uRes: p.uniform("uRes"),
-    uSunUV: p.uniform("uSunUV"),
-    uTime: p.uniform("uTime"),
-    uRainG: p.uniform("uRainG"),
-    uFrost: p.uniform("uFrost"),
-    uMist: p.uniform("uMist"),
-    uFlash: p.uniform("uFlash"),
-    uExposure: p.uniform("uExposure"),
-    uSeed: p.uniform("uSeed"),
-    uEnc: p.uniform("uEnc"),
-    uDim: p.uniform("uDim"),
-    uWet: p.uniform("uWet"),
-    uRays: p.uniform("uRays"),
-    uFlare: p.uniform("uFlare"),
-    uSunTint: p.uniform("uSunTint"),
-    uDetail: p.uniform("uDetail"),
+    uRaysTex: p.int(glsl.GLASS_uRaysTex),
+    uRes: p.vec2(glsl.GLASS_uRes),
+    uSunUV: p.vec2(glsl.GLASS_uSunUV),
+    uTime: p.float(glsl.GLASS_uTime),
+    uRainG: p.float(glsl.GLASS_uRainG),
+    uFrost: p.float(glsl.GLASS_uFrost),
+    uMist: p.float(glsl.GLASS_uMist),
+    uFlash: p.float(glsl.GLASS_uFlash),
+    uExposure: p.float(glsl.GLASS_uExposure),
+    uSeed: p.float(glsl.GLASS_uSeed),
+    uEnc: p.float(glsl.GLASS_uEnc),
+    uDim: p.float(glsl.GLASS_uDim),
+    uWet: p.float(glsl.GLASS_uWet),
+    uRays: p.float(glsl.GLASS_uRays),
+    uFlare: p.float(glsl.GLASS_uFlare),
+    uSunTint: p.vec3(glsl.GLASS_uSunTint),
+    uDetail: p.float(glsl.GLASS_uDetail),
   };
 }
 
@@ -37,8 +36,9 @@ export class GlassPass {
   readonly #u: ReturnType<typeof declareUniforms>;
 
   constructor(gpu: Gpu) {
-    this.program = gpu.program(FULLSCREEN_VS, GLASS_FS);
+    this.program = gpu.program(glsl.FULLSCREEN_VS, glsl.GLASS_FS);
     this.#u = declareUniforms(this.program);
+    this.#u.uRaysTex.value = 1;
   }
 
   /**
@@ -53,26 +53,25 @@ export class GlassPass {
     this.program.use();
     gpu.bindOutput(out, width, height);
     gpu.bindTexture(1, rays);
-    u.uRaysTex.int(1);
     gpu.bindTexture(0, scene);
-    u.uScene.int(0);
-    u.uRes.vec2(width, height);
-    u.uSunUV.vec2(s.sunUV[0], s.sunUV[1]);
-    u.uTime.float(f.time);
-    u.uRainG.float(s.glassRain);
-    u.uFrost.float(s.glassFrost);
-    u.uMist.float(s.glassMist);
-    u.uFlash.float(f.flash);
-    u.uExposure.float(s.weatherExposure);
-    u.uSeed.float(s.seed);
-    u.uEnc.float(f.enc);
-    u.uDim.float(s.exposure);
-    u.uWet.float(0.32 * s.glassRain);
-    u.uRays.float(raysActive(f) ? s.rays : 0);
-    u.uFlare.float(s.flare);
-    u.uSunTint.vec3(s.sunTint[0], s.sunTint[1], s.sunTint[2]);
-    u.uDetail.float(l.detail);
-    gpu.drawFullscreen();
+    u.uRes.value[0] = width;
+    u.uRes.value[1] = height;
+    u.uSunUV.value.set(s.sunUV);
+    u.uTime.value = f.time;
+    u.uRainG.value = s.glassRain;
+    u.uFrost.value = s.glassFrost;
+    u.uMist.value = s.glassMist;
+    u.uFlash.value = f.flash;
+    u.uExposure.value = s.weatherExposure;
+    u.uSeed.value = s.seed;
+    u.uEnc.value = f.enc;
+    u.uDim.value = s.exposure;
+    u.uWet.value = 0.32 * s.glassRain;
+    u.uRays.value = raysActive(f) ? s.rays : 0;
+    u.uFlare.value = s.flare;
+    u.uSunTint.value.set(s.sunTint);
+    u.uDetail.value = l.detail;
+    gpu.drawFullscreen(this.program);
     f.pixels += width * height;
     f.passes++;
   }

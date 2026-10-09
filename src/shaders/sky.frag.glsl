@@ -7,9 +7,16 @@ uniform int uStart, uEnd, uOctCap;
 uniform vec3 uSunCol, uMoonCol, uLCol, uZenith, uHorizon;
 in vec2 vUv; out vec4 o;
 #include "noise.glsl"
+// v6's fbm for a caller that only reads it through smoothstep(lo, hi, .), lo < hi: it stops once the result cannot land in
+// [lo, hi]. Octave i weighs 2^-(i+1) and vnoise is in [0, 1]: with weight n summed so far, out of w = 1 - 2^-oct, the octaves
+// left add between 0 and w - n. If s + w - n < lo*w the full sum ends below lo*w, and if s > hi*w above hi*w; s/n lies on the
+// same side, as n <= w, so the smoothstep is 0 or 1 either way. 1e-4 covers float rounding. Octaves are summed in v6's order.
+float fbm(vec2 p, int oct, float lo, float hi){ float a = 0.5, s = 0.0, n = 0.0, w = 1.0 - exp2(-float(oct));
+  float below = (lo - 1.0)*w - 1e-4, above = hi*w + 1e-4;
+  for (int i = 0; i < 6; i++){ if (i >= oct) break; s += a*vnoise(p); n += a; p = ROT*p + 17.3; a *= 0.5; if (s - n < below || s > above) break; } return s/n; }
 vec3 spectrum(float t){ t = clamp(t, 0.0, 1.0);
   return clamp(vec3(smoothstep(0.4, 0.9, t) + 0.45*smoothstep(0.15, 0.0, t), sin(t*3.1416)*0.9, smoothstep(0.55, 0.05, t)), 0.0, 1.0); }
-float cov2(vec2 q, int oct, float th, float soft){ return smoothstep(th, th + soft*2.6, fbm(q, oct)); }
+float cov2(vec2 q, int oct, float th, float soft){ return smoothstep(th, th + soft*2.6, fbm(q, oct, th, th + soft*2.6)); }
 void main(){
   float asp = uRes.x/uRes.y;
   vec2 p = (vUv - 0.5)*vec2(asp, 1.0);
@@ -60,7 +67,9 @@ void main(){
     float th = th0 + BIAS[i]; float soft = SOFT[i]*(1.0 + 1.2*ovc);
     vec2 q = q0*sc + vec2(uWindT*0.11*SP[i], uWindT*0.012*SP[i]) + vec2(uSeed*3.1 + float(i)*13.7, float(i)*7.3);
     q += (vec2(vnoise(q*0.35 + uTime*0.09), vnoise(q*0.35 + 7.7 - uTime*0.07)) - 0.5)*0.5;
-    float d = fbm(q, oct);
+    // below th + 0.025*soft, c < 0.002 (smoothstep at 0.025 is 0.0018), so v6's own continue skips the layer and the exit stops
+    // only where it would; above th + 2.6*soft, c and t2 are both 1. soft > 0 keeps the band's ends in order.
+    float d = fbm(q, oct, th + 0.025*soft, th + soft*2.6);
     float c = smoothstep(th, th + soft, d);
     if (c < 0.002) continue;
     float t2 = smoothstep(th, th + soft*2.6, d);

@@ -1,28 +1,27 @@
 import type { Gpu } from "../gl/context.ts";
 import type { Program } from "../gl/program.ts";
 import type { Target } from "../gl/target.ts";
-import { COMPOSITE_FS, FULLSCREEN_VS } from "../shaders/generated.ts";
+import * as glsl from "../shaders/generated.ts";
 import type { PassFrame } from "./frame.ts";
 
 function declareUniforms(p: Program) {
   return {
-    uSky: p.uniform("uSky"),
-    uRes: p.uniform("uRes"),
-    uSunPos: p.uniform("uSunPos"),
-    uMoonPos: p.uniform("uMoonPos"),
-    uBoltPos: p.uniform("uBoltPos"),
-    uTime: p.uniform("uTime"),
-    uSeed: p.uniform("uSeed"),
-    uSunUp: p.uniform("uSunUp"),
-    uMoonUp: p.uniform("uMoonUp"),
-    uMoonPhase: p.uniform("uMoonPhase"),
-    uStar: p.uniform("uStar"),
-    uEnc: p.uniform("uEnc"),
-    uHide: p.uniform("uHide"),
-    uBolt: p.uniform("uBolt"),
-    uBoltSeed: p.uniform("uBoltSeed"),
-    uSunCol: p.uniform("uSunCol"),
-    uMoonCol: p.uniform("uMoonCol"),
+    uRes: p.vec2(glsl.COMPOSITE_uRes),
+    uSunPos: p.vec2(glsl.COMPOSITE_uSunPos),
+    uMoonPos: p.vec2(glsl.COMPOSITE_uMoonPos),
+    uBoltPos: p.vec2(glsl.COMPOSITE_uBoltPos),
+    uTime: p.float(glsl.COMPOSITE_uTime),
+    uSeed: p.float(glsl.COMPOSITE_uSeed),
+    uSunUp: p.float(glsl.COMPOSITE_uSunUp),
+    uMoonUp: p.float(glsl.COMPOSITE_uMoonUp),
+    uMoonPhase: p.float(glsl.COMPOSITE_uMoonPhase),
+    uStar: p.float(glsl.COMPOSITE_uStar),
+    uEnc: p.float(glsl.COMPOSITE_uEnc),
+    uHide: p.float(glsl.COMPOSITE_uHide),
+    uBolt: p.float(glsl.COMPOSITE_uBolt),
+    uBoltSeed: p.float(glsl.COMPOSITE_uBoltSeed),
+    uSunCol: p.vec3(glsl.COMPOSITE_uSunCol),
+    uMoonCol: p.vec3(glsl.COMPOSITE_uMoonCol),
   };
 }
 
@@ -32,7 +31,7 @@ export class CompositePass {
   readonly #u: ReturnType<typeof declareUniforms>;
 
   constructor(gpu: Gpu) {
-    this.program = gpu.program(FULLSCREEN_VS, COMPOSITE_FS);
+    this.program = gpu.program(glsl.FULLSCREEN_VS, glsl.COMPOSITE_FS);
     this.#u = declareUniforms(this.program);
   }
 
@@ -42,24 +41,24 @@ export class CompositePass {
     this.program.use();
     gpu.bindOutput(out, l.sceneWidth, l.sceneHeight);
     gpu.bindTexture(0, sky);
-    u.uSky.int(0);
-    u.uRes.vec2(l.sceneWidth, l.sceneHeight);
-    u.uSunPos.vec2(s.sunPos[0], s.sunPos[1]);
-    u.uMoonPos.vec2(s.moonPos[0], s.moonPos[1]);
-    u.uBoltPos.vec2(b.position[0], b.position[1]);
-    u.uTime.float(f.time);
-    u.uSeed.float(s.seed);
-    u.uSunUp.float(s.sunUp);
-    u.uMoonUp.float(s.moonUp);
-    u.uMoonPhase.float(s.moonPhase);
-    u.uStar.float(s.star);
-    u.uEnc.float(f.enc);
-    u.uHide.float(s.hide);
-    u.uBolt.float(b.bolt);
-    u.uBoltSeed.float(b.seed);
-    u.uSunCol.vec3(s.sunColor[0], s.sunColor[1], s.sunColor[2]);
-    u.uMoonCol.vec3(s.moonColor[0], s.moonColor[1], s.moonColor[2]);
-    gpu.drawFullscreen();
+    u.uRes.value[0] = l.sceneWidth;
+    u.uRes.value[1] = l.sceneHeight;
+    u.uSunPos.value.set(s.sunPos);
+    u.uMoonPos.value.set(s.moonPos);
+    u.uBoltPos.value.set(b.position);
+    u.uTime.value = f.time;
+    u.uSeed.value = s.seed;
+    u.uSunUp.value = s.sunUp;
+    u.uMoonUp.value = s.moonUp;
+    u.uMoonPhase.value = s.moonPhase;
+    u.uStar.value = s.star;
+    u.uEnc.value = f.enc;
+    u.uHide.value = s.hide;
+    u.uBolt.value = b.bolt;
+    u.uBoltSeed.value = b.seed;
+    u.uSunCol.value.set(s.sunColor);
+    u.uMoonCol.value.set(s.moonColor);
+    gpu.drawFullscreen(this.program);
     f.pixels += l.sceneWidth * l.sceneHeight;
     f.passes++;
   }

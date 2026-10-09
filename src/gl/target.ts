@@ -9,7 +9,7 @@ export function hdrEncoding(float: boolean): number {
   return float ? 1 : 0.2;
 }
 
-/** A texture with its framebuffer, bilinear and clamped; storage is (re)allocated by `resize`. */
+/** A texture with its framebuffer, bilinear and clamped; storage is (re)allocated by `resize`, and starts empty. */
 export class Target {
   readonly texture: WebGLTexture;
   readonly framebuffer: WebGLFramebuffer;
@@ -41,7 +41,7 @@ export class Target {
     this.framebuffer = fb;
   }
 
-  /** Allocates `width` x `height` storage unless the size is unchanged. */
+  /** Allocates `width` x `height` storage unless the size is unchanged; 0 x 0 frees it. */
   resize(width: number, height: number): void {
     if (this.width === width && this.height === height) return;
     const gl = this.#gl;

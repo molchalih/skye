@@ -8,3 +8,4 @@ test-results/
 src/shaders/generated.ts
 custom-elements.json
 docs/
+bench/results/

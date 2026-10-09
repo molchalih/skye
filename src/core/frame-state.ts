@@ -115,66 +115,6 @@ export interface FrameState {
   gust: number;
 }
 
-type KeysOf<V> = { [K in keyof FrameState]: FrameState[K] extends V ? K : never }[keyof FrameState];
-export type NumberKey = Exclude<KeysOf<number>, "blur">;
-export type Vec2Key = KeysOf<Vec2>;
-export type Vec3Key = KeysOf<Vec3>;
-
-/** Scalar fields eased exponentially; `blur` is excluded because it has its own tween. */
-export const NUMBER_KEYS: readonly NumberKey[] = [
-  "cover",
-  "intensity",
-  "seed",
-  "glass",
-  "focus",
-  "wind",
-  "exposure",
-  "aspect",
-  "sinElevation",
-  "night",
-  "sunUp",
-  "moonUp",
-  "weatherExposure",
-  "cloudDark",
-  "rain",
-  "snow",
-  "fog",
-  "haze",
-  "dust",
-  "storm",
-  "sleet",
-  "glassRain",
-  "glassFrost",
-  "glassMist",
-  "rays",
-  "flare",
-  "rainbow",
-  "belt",
-  "star",
-  "hide",
-  "moonPhase",
-  "moonIllumination",
-  "sunrise",
-  "sunset",
-  "elevationDeg",
-  "gust",
-];
-export const VEC2_KEYS: readonly Vec2Key[] = [
-  "sunPos",
-  "moonPos",
-  "lightPos",
-  "antiSunPos",
-  "sunUV",
-];
-export const VEC3_KEYS: readonly Vec3Key[] = [
-  "zenith",
-  "horizon",
-  "sunColor",
-  "moonColor",
-  "lightColor",
-  "sunTint",
-];
-
 export function createFrameState(): FrameState {
   return {
     cover: 0,
@@ -226,21 +166,6 @@ export function createFrameState(): FrameState {
     elevationDeg: 0,
     gust: 0,
   };
-}
-
-/** Copies every value of `src` into `dst` without allocating. */
-export function copyFrameState(dst: FrameState, src: Readonly<FrameState>): void {
-  dst.blur = src.blur;
-  for (const k of NUMBER_KEYS) dst[k] = src[k];
-  for (const k of VEC2_KEYS) {
-    dst[k][0] = src[k][0];
-    dst[k][1] = src[k][1];
-  }
-  for (const k of VEC3_KEYS) {
-    dst[k][0] = src[k][0];
-    dst[k][1] = src[k][1];
-    dst[k][2] = src[k][2];
-  }
 }
 
 // Writes the zenith and horizon colours for a sun elevation by interpolating the stop table.

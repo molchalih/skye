@@ -24,6 +24,10 @@ const UNIT_QUAD: readonly number[] = [-1, -1, 1, -1, -1, 1, 1, 1];
 /**
  * The GL context plus the few draw helpers the passes share: the full-screen
  * triangle, the instanced quad, render-target binding and blending.
+ *
+ * Within a frame it skips binds that would change nothing. It trusts what it
+ * bound only until the frame ends: between frames anything else may bind on
+ * this context, such as page code holding the same canvas's context.
  */
 export class Gpu {
   readonly gl: WebGL2RenderingContext;
@@ -34,13 +38,20 @@ export class Gpu {
   readonly #buffers: WebGLBuffer[] = [];
   readonly #fullscreen: WebGLVertexArrayObject;
   readonly #quad: WebGLVertexArrayObject;
+  // What this frame has bound so far; undefined (or -1) is unknown.
+  #output: Target | null | undefined;
+  #viewportWidth = -1;
+  #viewportHeight = -1;
+  #unit = -1;
+  readonly #textures: (Target | undefined)[] = [undefined, undefined];
+  #vertexArray: WebGLVertexArrayObject | undefined;
 
   constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
     this.float = gl.getExtension("EXT_color_buffer_float") !== null;
     this.parallel = gl.getExtension("KHR_parallel_shader_compile");
-    this.#fullscreen = this.#vertexArray(FULLSCREEN_TRIANGLE);
-    this.#quad = this.#vertexArray(UNIT_QUAD);
+    this.#fullscreen = this.#createVertexArray(FULLSCREEN_TRIANGLE);
+    this.#quad = this.#createVertexArray(UNIT_QUAD);
   }
 
   /** Compiles and links a program; with parallel compile the link status is read later. */
@@ -52,34 +63,57 @@ export class Gpu {
     return new Target(this.gl, kind, this.float, mipmapped);
   }
 
+  /** Starts a frame: forgets every binding, so each is set again before its first use. */
+  beginFrame(): void {
+    this.#output = undefined;
+    this.#viewportWidth = -1;
+    this.#viewportHeight = -1;
+    this.#unit = -1;
+    this.#textures.fill(undefined);
+    this.#vertexArray = undefined;
+  }
+
   /** Draws into `target` (the canvas when null) over a `width` x `height` viewport. */
   bindOutput(target: Target | null, width: number, height: number): void {
     const gl = this.gl;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, target === null ? null : target.framebuffer);
-    gl.viewport(0, 0, width, height);
+    if (target !== this.#output) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, target === null ? null : target.framebuffer);
+      this.#output = target;
+    }
+    if (width !== this.#viewportWidth || height !== this.#viewportHeight) {
+      gl.viewport(0, 0, width, height);
+      this.#viewportWidth = width;
+      this.#viewportHeight = height;
+    }
   }
 
-  bindTexture(unit: number, target: Target): void {
-    const gl = this.gl;
-    gl.activeTexture(gl.TEXTURE0 + unit);
-    gl.bindTexture(gl.TEXTURE_2D, target.texture);
+  /** Binds `target` to texture unit 0 or 1. */
+  bindTexture(unit: 0 | 1, target: Target): void {
+    if (this.#textures[unit] === target) return;
+    this.#activate(unit);
+    this.gl.bindTexture(this.gl.TEXTURE_2D, target.texture);
+    this.#textures[unit] = target;
   }
 
-  /** Rebuilds the mip chain of a target bound to texture unit 0. */
+  /** Rebuilds the mip chain of a target, leaving it bound to texture unit 0. */
   generateMipmaps(target: Target): void {
     this.bindTexture(0, target);
+    // The bind above is skipped when the target is already on unit 0, even while unit 1 is the active one.
+    this.#activate(0);
     this.gl.generateMipmap(this.gl.TEXTURE_2D);
   }
 
-  // Vertex arrays are bound on every draw rather than cached: a cache goes stale as soon as anything else
-  // binds one on this context, such as page code holding the same canvas's context.
-  drawFullscreen(): void {
-    this.gl.bindVertexArray(this.#fullscreen);
+  /** Draws the full-screen triangle with `program`, which is in use, and its current uniform values. */
+  drawFullscreen(program: Program): void {
+    program.upload();
+    this.#bindVertexArray(this.#fullscreen);
     this.gl.drawArrays(this.gl.TRIANGLES, 0, 3);
   }
 
-  drawQuads(instances: number): void {
-    this.gl.bindVertexArray(this.#quad);
+  /** Draws `instances` unit quads with `program`, which is in use, and its current uniform values. */
+  drawQuads(program: Program, instances: number): void {
+    program.upload();
+    this.#bindVertexArray(this.#quad);
     this.gl.drawArraysInstanced(this.gl.TRIANGLE_STRIP, 0, 4, instances);
   }
 
@@ -102,7 +136,19 @@ export class Gpu {
     for (const b of this.#buffers) gl.deleteBuffer(b);
   }
 
-  #vertexArray(vertices: readonly number[]): WebGLVertexArrayObject {
+  #activate(unit: 0 | 1): void {
+    if (unit === this.#unit) return;
+    this.gl.activeTexture(this.gl.TEXTURE0 + unit);
+    this.#unit = unit;
+  }
+
+  #bindVertexArray(vao: WebGLVertexArrayObject): void {
+    if (vao === this.#vertexArray) return;
+    this.gl.bindVertexArray(vao);
+    this.#vertexArray = vao;
+  }
+
+  #createVertexArray(vertices: readonly number[]): WebGLVertexArrayObject {
     const gl = this.gl;
     const vao = gl.createVertexArray();
     gl.bindVertexArray(vao);
