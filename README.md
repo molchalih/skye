@@ -1,3 +1,14 @@
+<p align="center">
+  <img alt="skye" src=".github/assets/logo.svg" width="480" />
+</p>
+
+<p align="center">
+  <img alt="TypeScript" src="https://img.shields.io/badge/typescript-%23007ACC.svg?style=for-the-badge&logo=typescript&logoColor=white" />
+  <img alt="WebGL" src="https://img.shields.io/badge/webgl-%23990000.svg?style=for-the-badge&logo=webgl&logoColor=white" />
+  <img alt="Vite" src="https://img.shields.io/badge/vite-%23646CFF.svg?style=for-the-badge&logo=vite&logoColor=white" />
+  <img alt="Bun" src="https://img.shields.io/badge/Bun-%23000000.svg?style=for-the-badge&logo=bun&logoColor=white" />
+</p>
+
 # @a240/skye
 
 A zero-dependency WebGL2 sky renderer. It draws weather scenes (clear, cloudy, fog, rain, storm, sleet, snow, haze) with clouds, sun, moon, stars, rain on glass and background blur. It has no runtime dependencies and works from plain HTML, any framework, or a worker.
