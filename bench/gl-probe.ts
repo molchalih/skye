@@ -41,13 +41,14 @@ const SHADER_PASS = new Map<string, string>([
   [BLUR_FS, "blur"],
 ]);
 
-/** In the order the pipeline creates its targets (`Pipeline` constructor). */
-const TARGET_NAMES = ["sky", "scene", "rays", "blurA", "blurB"];
+/** In the order the pipeline creates its textures (`Pipeline` constructor): the targets, then the sky's noise. */
+const TARGET_NAMES = ["sky", "scene", "rays", "blurA", "blurB", "noise"];
 
 const FORMATS = new Map<number, { name: string; bpp: number }>([
   [0x881a, { name: "RGBA16F", bpp: 8 }],
   [0x8229, { name: "R8", bpp: 1 }],
   [0x8058, { name: "RGBA8", bpp: 4 }],
+  [0x822d, { name: "R16F", bpp: 2 }],
 ]);
 
 interface Texture {
@@ -164,7 +165,7 @@ export class GlProbe {
     this.#counting();
   }
 
-  /** Render targets the renderer allocated, in creation order. */
+  /** Textures the renderer allocated, in creation order: its render targets and the noise texture. */
   targets(): TargetInfo[] {
     return [...this.#textures.values()]
       .filter((t) => t.width > 0)

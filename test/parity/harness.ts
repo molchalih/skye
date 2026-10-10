@@ -7,6 +7,7 @@ import {
   type SkyeParams,
   type SkyeStats,
 } from "../../src/index.ts";
+import { amendV6 } from "./image-edits.ts";
 
 // Registers <weather-sky-v6>.
 await import("../reference/weather-sky-v6.js");
@@ -148,7 +149,8 @@ export interface V6Frame extends Frame {
 /**
  * v6's element in this page at a CSS size and device pixel ratio, its own
  * loop switched off, drawn frame by frame with stubbed time and random
- * sequence the way skye is driven with `render(t)`.
+ * sequence the way skye is driven with `render(t)`, and amended with the
+ * approved image changes (image-edits.ts).
  */
 export class V6Reference {
   private readonly host: HTMLDivElement;
@@ -183,7 +185,7 @@ export class V6Reference {
     });
   }
 
-  /** Mounts v6 and resolves once its programs are linked. */
+  /** Mounts v6 and resolves once its programs are linked and amended. */
   static async create(
     params: SkyeParams,
     cssWidth: number,
@@ -201,6 +203,7 @@ export class V6Reference {
     await until(() => Reflect.get(el, "_glass") && Reflect.get(el, "_blur"), "v6 programs");
     const gl: unknown = Reflect.get(el, "_gl");
     if (!(gl instanceof WebGL2RenderingContext)) throw new Error("v6 has no WebGL2 context");
+    amendV6(el);
     return new V6Reference(host, el, gl, params, devicePixelRatio);
   }
 

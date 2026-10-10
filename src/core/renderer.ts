@@ -17,7 +17,11 @@ import { TIERS, type TierDef } from "./tables.ts";
 
 const FIRST_DT = 1 / 60;
 const MAX_DT = 0.1;
-const POLL_MS = 16;
+// Compile polls: every millisecond at first, which browsers stretch to 4 ms once five timers have chained, then once
+// a frame, so a slow or stalled compile does not wake the CPU hundreds of times a second.
+const POLL_MS = 1;
+const SLOW_POLL_MS = 16;
+const FAST_POLLS = 25;
 
 // An indexed loop rather than find() or for-of: this runs every frame and must allocate neither a callback nor an
 // iterator, which V8's mid tier keeps.
@@ -87,6 +91,8 @@ class SkyRenderer implements Sky {
   #disposed = false;
   #drawn = false;
   #pollTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Compile polls so far on the current context. */
+  #polls = 0;
 
   constructor(
     canvas: SkyCanvas,
@@ -137,7 +143,7 @@ class SkyRenderer implements Sky {
     const target: EventTarget = canvas;
     target.addEventListener("webglcontextlost", this.#onLost);
     target.addEventListener("webglcontextrestored", this.#onRestored);
-    this.#pollTimer = setTimeout(this.#poll, 0);
+    this.#pollTimer = setTimeout(this.#poll, POLL_MS);
   }
 
   update(params: Partial<SkyeParams>): void {
@@ -326,10 +332,13 @@ class SkyRenderer implements Sky {
     }
   }
 
+  // Fast at first rather than once a frame: a poll costs microseconds, as the driver answers the completion query
+  // without waiting, while a poll per frame left finished programs unused for half a frame on average. A zero delay
+  // would poll the first five times at once instead.
   readonly #poll = (): void => {
     this.#pollTimer = undefined;
     if (this.#checkReady() || !this.#compiling()) return;
-    this.#pollTimer = setTimeout(this.#poll, POLL_MS);
+    this.#pollTimer = setTimeout(this.#poll, ++this.#polls < FAST_POLLS ? POLL_MS : SLOW_POLL_MS);
   };
 
   // A lost context stops the poll; the restore event rebuilds the programs and starts it again.
@@ -409,14 +418,17 @@ class SkyRenderer implements Sky {
     Object.assign(this.#layout, createLayout());
     this.#layout.detailScale = detailScale;
     this.#model.invalidate();
-    this.#pollTimer = setTimeout(this.#poll, 0);
+    this.#polls = 0;
+    this.#pollTimer = setTimeout(this.#poll, POLL_MS);
   };
 }
 
 /**
  * Creates a sky drawing into `canvas` with WebGL2. Throws when the canvas
- * cannot provide a WebGL2 context. Shaders compile in the background where the
- * driver allows; listen for `"ready"` to know when frames start drawing.
+ * cannot provide a WebGL2 context. A context the canvas already has is used
+ * with its own attributes, such as a `powerPreference` the caller chose.
+ * Shaders compile in the background where the driver allows; listen for
+ * `"ready"` to know when frames start drawing.
  */
 export function createSky(
   canvas: SkyCanvas,

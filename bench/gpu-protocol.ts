@@ -172,6 +172,14 @@ export interface Startup {
   firstFrameMs: number;
   /** JS heap growth from before the import to after the first frame, MB. */
   heapMB: number;
+  /** Timer and frame callbacks that ran between createSky and ready: the sky's compile polls. */
+  skyTasks: number;
+  /** Their main-thread time, ms; with `createMs`, what the sky blocks the page for before it can draw. */
+  skyTaskMs: number;
+  /** The longest of the createSky task and those callbacks, ms. */
+  longestTaskMs: number;
+  /** Long tasks (50 ms and over) the browser reported between createSky and the first frame. */
+  longTasks: number;
 }
 
 export type ElementState = "visible" | "offscreen" | "hidden" | "static" | "reduced-motion";

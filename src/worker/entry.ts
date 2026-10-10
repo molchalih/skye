@@ -12,6 +12,8 @@ import {
 
 /** At most four stats snapshots a second. */
 const STATS_MS = 250;
+/** Frames a fence is waited for at most, about a second at 60 Hz: one that never signals holds nothing for good. */
+const FENCE_FRAMES = 60;
 
 /** The parts of a dedicated worker's global scope the worker side uses. */
 export interface WorkerScope {
@@ -69,6 +71,8 @@ class WorkerSky {
   #held: (() => void)[] | undefined;
   /** The fence that marks the end of the frame being waited for, while the GPU works through it. */
   #fence: WebGLSync | null = null;
+  /** Frames the current fence has been waited for. */
+  #fenceFrames = 0;
   #frame: number | undefined;
 
   constructor(scope: WorkerScope) {
@@ -144,9 +148,11 @@ class WorkerSky {
     sky.on("tierchange", (detail) => this.#send({ type: "event", name: "tierchange", detail }));
     // The page times the browser's own restore, which comes before the sky's relink.
     const target: EventTarget = canvas;
-    target.addEventListener("webglcontextlost", () =>
-      this.#send({ type: "event", name: "webglcontextlost" }),
-    );
+    target.addEventListener("webglcontextlost", () => {
+      // A fence from before the loss never signals; the next wait releases what it holds.
+      this.#fence = null;
+      this.#send({ type: "event", name: "webglcontextlost" });
+    });
     target.addEventListener("webglcontextrestored", () =>
       this.#send({ type: "event", name: "webglcontextrestored" }),
     );
@@ -180,8 +186,15 @@ class WorkerSky {
     this.#held = [run];
     this.#frame = requestAnimationFrame(() => {
       this.#frame = undefined;
-      this.#fence = this.#gl?.fenceSync(this.#gl.SYNC_GPU_COMMANDS_COMPLETE, 0) ?? null;
-      this.#gl?.flush();
+      // A lost context drew no frame to wait for. WebKit still hands out a sync object there, which reads as pending
+      // forever once the context is restored, and its restore can land before the wait below.
+      const gl = this.#gl;
+      this.#fence =
+        gl === undefined || gl.isContextLost()
+          ? null
+          : gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+      this.#fenceFrames = 0;
+      gl?.flush();
       this.#awaitFence();
     });
   }
@@ -196,13 +209,15 @@ class WorkerSky {
 
   // The frame callback runs once the frame is submitted, not once the GPU has drawn it; the page shows nothing new
   // until then. A busy GPU, compiling shaders on first use or rendering in software, can take hundreds of ms more, so
-  // the messages wait for the fence placed after the frame. A lost context fails the wait, which also releases them.
+  // the messages wait for the fence placed after the frame. A lost context fails the wait, which also releases them,
+  // and so does a fence still pending after FENCE_FRAMES.
   #awaitFence(): void {
     const gl = this.#gl;
     const fence = this.#fence;
     if (
       gl !== undefined &&
       fence !== null &&
+      this.#fenceFrames++ < FENCE_FRAMES &&
       gl.clientWaitSync(fence, 0, 0) === gl.TIMEOUT_EXPIRED
     ) {
       this.#frame = requestAnimationFrame(() => {

@@ -15,21 +15,25 @@ The tests run in real browsers through Playwright, so all three engines must be 
 
 `bun run check` is the gate. It runs `check:static`, then `check:browsers`, each step in this order:
 
-| Step             | What it checks                                                                                                     |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `lint`           | oxlint with type-aware rules, after generating the shaders                                                         |
-| `typecheck`      | `tsc -b`, strict, over `src`, `scripts`, `test`, `bench` and `site`                                                |
-| `format:check`   | prettier (`bun run format` fixes it)                                                                               |
-| `test:unit`      | unit tests in Node                                                                                                 |
-| `build`          | shader generation with short GLSL names, tsdown (minified, with source maps), and the custom elements manifest     |
-| `check:package`  | publint (strict) and Are the Types Wrong? (ESM-only profile)                                                       |
-| `size`           | each entry against its limit in `.size-limit.json`                                                                 |
-| `test:browser`   | browser tests in WebKit, Chromium and Firefox, then the worker tests; includes the pixel parity gate               |
-| `test:consumers` | the packed package from plain HTML with an import map, from a Vite app, from type-checked consumers, and beside v6 |
+| Step             | What it checks                                                                                                                                                                                                                   |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lint`           | oxlint with type-aware rules, after generating the shaders                                                                                                                                                                       |
+| `typecheck`      | `tsc -b`, strict, over `src`, `scripts`, `test`, `bench` and `site`                                                                                                                                                              |
+| `format:check`   | prettier (`bun run format` fixes it)                                                                                                                                                                                             |
+| `test:unit`      | unit tests in Node                                                                                                                                                                                                               |
+| `build`          | shader generation (unused functions dropped, short GLSL names and float literals, a uniform table per program), tsdown (minified, with source maps, each entry importing every chunk it needs), and the custom elements manifest |
+| `check:package`  | publint (strict) and Are the Types Wrong? (ESM-only profile)                                                                                                                                                                     |
+| `size`           | each entry against its limit in `.size-limit.json`                                                                                                                                                                               |
+| `test:browser`   | browser tests in WebKit, Chromium and Firefox, then the worker tests; includes the pixel parity gate                                                                                                                             |
+| `test:consumers` | the packed package from plain HTML with an import map, from a Vite app, from type-checked consumers, and beside v6                                                                                                               |
 
 While you work, run the part you need: `bun run test:unit`, `bun run test:browser`, `bun run test:consumers`.
 
-`SKYE_READABLE_SHADERS=1 bun run shaders` keeps the `.glsl` names in the generated shaders, so a driver's info log is readable. Every command that regenerates them (`bun run site`, `bun run test:browser`) needs the variable too, and `size` fails while it is set.
+Each limit in `.size-limit.json` is the entry's size when it was last set, rounded up with about 150 B to spare: three times the 40 to 50 B that an edit changing no behaviour can move brotli either way. A saving smaller than that is noise until it holds across several such edits; measure one against a handful of them before relying on it. When a change that is worth its bytes crosses a limit, raise the limit in the same change and say why in the pull request.
+
+The shader build (`scripts/shaders.ts`) gives each program a uniform table, `SKY_UNIFORMS`, and each uniform a constant for where its value starts in the program's `values` array, `SKY_uTime`. A pass writes `values[glsl.SKY_uTime]`, so no uniform name reaches the bundle outside the table. Slots are typed by program and width: `values.set` takes a whole vector only into a slot of its own program that is as wide. `src/passes/uniforms.test.ts` checks what types cannot: that every pass names only its own program's slots, and that a component it writes by index (`glsl.SKY_uRes + 1`) stays within the uniform's width. An array uniform fails the build, since the table holds one value per uniform.
+
+`SKYE_READABLE_SHADERS=1 bun run shaders` keeps the `.glsl` names and literals in the generated shaders, so a driver's info log is readable. Every command that regenerates them (`bun run site`, `bun run test:browser`) needs the variable too, and `size` fails while it is set.
 
 `bun run bench` opens a benchmark page, a manual tool that `check` does not run. The stage defaults to 1280×960 CSS px; change it with `?w=` and `?h=`. The page prints a Markdown table (Tier, Mode, Scene, GPU ms, CPU ms, fps, Mpx, Method, Status) to paste into docs. In main-thread mode it drives the core with GPU timing on, so every tier has a GPU time; worker mode drives `<skye-view>`, which times the GPU only under `quality="auto"`.
 
@@ -41,7 +45,7 @@ While you work, run the part you need: `bun run test:unit`, `bun run test:browse
 
 It runs these sections:
 
-- **Startup.** The core is bundled into one minified module and imported into fresh pages. The section records import time, `createSky`, time to ready (shader compile and link), and time to the first frame read back. Cold runs use a new browser, so the GPU program cache is empty; warm runs use a new page in that browser.
+- **Startup.** The core is bundled into one minified module and imported into fresh pages. The section records import time, `createSky`, time to ready (shader compile and link), time to the first frame read back, and the main-thread time the sky takes before it can draw: the `createSky` call plus every compile poll, with the longest task and any long tasks. Cold runs use a new browser, so the GPU program cache is empty; warm runs use a new page in that browser.
 - **Matrix.** Scenes × tiers × CSS sizes × pixel ratios, each a sky driven with `render(t)` at t = i/60. The fixed times make every run draw the same frames.
 - **Element.** A real `<skye-view>`, on the main thread and in a worker, running its own loop in five states: visible, offscreen, hidden, static and reduced motion.
 
@@ -73,10 +77,11 @@ Some measurements need root or Xcode, and the bench does not take them:
 
 ## Pixel parity
 
-skye draws exactly what the renderer it replaces (v6) draws. v6's source is kept unchanged in `test/reference/weather-sky-v6.js`, and the parity gate renders both side by side.
+skye draws exactly what the renderer it replaces (v6) draws, apart from the changes to the image the owner has approved. v6's source is kept unchanged in `test/reference/weather-sky-v6.js`, and the parity gate renders both side by side. Before it compares, the gate gives v6 the approved changes: `test/parity/image-edits.ts` lists each as an edit to v6's shader text, which the harness applies to v6's own programs, along with any data they read. Every pixel is still held to v6 as amended.
 
 - **When a parity case fails, fix the divergence in skye.** Never edit the reference file and never loosen the tolerance.
-- **A change that could alter pixels does not go into code.** Propose it in an issue with its measured gain and parity diff. It is applied only after the owner approves that item. This covers fewer particles, fewer ray taps, lower precision, skipped mipmaps, lower octave caps and any shader change beyond stripping comments and whitespace and shortening names.
+- **A change that could alter pixels does not go into code.** Propose it in an issue with its measured gain and parity diff. It is applied only after the owner approves that item. This covers fewer particles, fewer ray taps, lower precision, skipped mipmaps, lower octave caps and any shader change beyond stripping comments and whitespace, dropping functions nothing calls and shortening names.
+- **An approved change to the image goes into `test/parity/image-edits.ts` with the code,** so the gate amends v6 the same way; any data it reads, such as the noise lattice, gets a test that pins it. `scripts/shaders.test.ts` applies these edits to v6's text before its own list of exact edits, which change no value; compiler rounding may move a channel by 1/255. Approved so far: the sky's clouds, mist and Milky Way, and the glass's frost, read value noise from a texture of hash12's lattice (`src/gl/noise.ts`, sampled by `tnoise` in `src/shaders/lattice.glsl`) instead of hashing in each pixel; the glass binds it to texture unit 2.
 - **No default may read the clock or the calendar.** Callers pass time and date.
 - **Per-frame code allocates nothing.**
 

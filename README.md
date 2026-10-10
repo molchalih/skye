@@ -72,7 +72,7 @@ Replace `<version>` with a release, such as `0.1.1`, and pin it in production:
 <script type="module" src="https://unpkg.com/@a240/skye@<version>/dist/define.js"></script>
 ```
 
-`dist/define.js` loads four sibling files; jsDelivr's `/+esm` suffix serves it as one. Worker mode needs [an extra step](#worker-mode) from a CDN.
+`dist/define.js` loads four sibling files, and names them all itself, so the browser requests them together; jsDelivr's `/+esm` suffix serves it as one. Worker mode needs [an extra step](#worker-mode) from a CDN.
 
 ### Core
 
@@ -102,6 +102,8 @@ requestAnimationFrame(frame);
 ```
 
 Also: `setVisible(visible)`, `setReducedMotion(reduced)`, `stats()`, `probe(on)`, `stop()`, `dispose()`. `on(event, handler)` returns an unsubscribe function. The `random` option replaces the lightning random source for reproducible frames.
+
+`createSky` uses a context the canvas already has, with that context's attributes; otherwise it asks for its own with the browser's default GPU.
 
 `dispose()` frees the sky's GPU resources but leaves the context to the browser. Browsers cap live contexts per page, so if you create many skies on your own canvases, release each context too (`<skye-view>` does this for you):
 
@@ -253,23 +255,23 @@ All need WebGL2; without it the element shows the gradient and fires `skye-fallb
 
 ## Bundle size
 
-Brotli at quality 11; 1 kB is 1000 bytes.
+Brotli at quality 11, gzip at level 9 (`gzip -9`); 1 kB is 1000 bytes.
 
 **Through your bundler** (`bun run size`):
 
 | Entry               | Size    | Contents                               |
 | ------------------- | ------- | -------------------------------------- |
-| `@a240/skye`        | 17.0 kB | Core.                                  |
-| `@a240/skye/define` | 20.1 kB | Element and core.                      |
-| `@a240/skye/react`  | 20.7 kB | Component, element and core, no React. |
+| `@a240/skye`        | 16.8 kB | Core.                                  |
+| `@a240/skye/define` | 19.9 kB | Element and core.                      |
+| `@a240/skye/react`  | 20.4 kB | Component, element and core, no React. |
 
-**From a CDN as published**, each file compressed on its own:
+**From a CDN as published**, each file compressed on its own. Each entry imports every file it needs, so the browser requests them all in a second round, after the entry itself:
 
-| Entry              | Files | Minified | Brotli  | gzip    |
-| ------------------ | ----- | -------- | ------- | ------- |
-| `dist/define.js`   | 5     | 64.4 kB  | 21.4 kB | 24.1 kB |
-| `dist/index.js`    | 3     | 52.6 kB  | 17.5 kB | 19.7 kB |
-| `dist/worker.js`\* | 4     | 56.0 kB  | 18.7 kB | 21.0 kB |
+| Entry              | Files | Rounds | Minified | Brotli  | gzip    |
+| ------------------ | ----- | ------ | -------- | ------- | ------- |
+| `dist/define.js`   | 5     | 2      | 61.1 kB  | 21.2 kB | 23.9 kB |
+| `dist/index.js`    | 3     | 2      | 49.3 kB  | 17.3 kB | 19.4 kB |
+| `dist/worker.js`\* | 4     | 2      | 52.7 kB  | 18.5 kB | 20.8 kB |
 
 \* Only `worker.js` itself (1.2 kB brotli) is new; the rest the page already has.
 

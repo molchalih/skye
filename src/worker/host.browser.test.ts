@@ -17,6 +17,7 @@ import { readPixels, wait } from "../../test/support/sky.ts";
 import type { TestRequest } from "../../test/support/workers/instrumented.ts";
 import { JUNK } from "../../test/support/workers/junk.ts";
 import { ShaderError } from "../index.ts";
+import type { HostMessage } from "./protocol.ts";
 import {
   SKYE_CONTEXTLOST,
   SKYE_CONTEXTRESTORED,
@@ -97,6 +98,23 @@ class TrackedWorker extends NativeWorker {
       };
       this.addEventListener("message", onMessage);
       this.test({ test: "frames" });
+    });
+  }
+
+  /** Asks the worker for `drawn` with `id`, as the page does, and resolves once it arrives. */
+  drawn(id: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`no drawn ${id}`)), WAIT_MS);
+      const onMessage = (event: MessageEvent<unknown>): void => {
+        const data = event.data;
+        if (typeof data !== "object" || data === null) return;
+        if (Reflect.get(data, "type") !== "drawn" || Reflect.get(data, "id") !== id) return;
+        clearTimeout(timer);
+        this.removeEventListener("message", onMessage);
+        resolve();
+      };
+      this.addEventListener("message", onMessage);
+      this.postMessage({ type: "frame", id } satisfies HostMessage);
     });
   }
 }
@@ -545,6 +563,32 @@ describe("context loss in worker mode", () => {
     expect(worker.terminated).toBe(false);
     expect(canvasOf(el)).toBe(canvas);
     expect(seen).toEqual([SKYE_READY, SKYE_CONTEXTLOST, SKYE_CONTEXTRESTORED]);
+  });
+
+  it("forwards a loss and restore that land between a frame's fence and its wait", async () => {
+    const { el } = mount({ worker: INSTRUMENTED, motion: "static" });
+    const seen = record(el);
+    await nextEvent(el, SKYE_READY);
+    const worker = TrackedWorker.only();
+    const lost = nextEvent(el, SKYE_CONTEXTLOST);
+    worker.test({ test: "loseAfterFence" });
+    // Far above the ids the element uses, which it ignores.
+    const drawn = worker.drawn(1000);
+    await lost;
+    const restored = nextEvent(el, SKYE_CONTEXTRESTORED);
+    worker.test({ test: "restore" });
+    await Promise.all([drawn, restored]);
+    expect(worker.terminated).toBe(false);
+    expect(seen).toEqual([SKYE_READY, SKYE_CONTEXTLOST, SKYE_CONTEXTRESTORED]);
+  });
+
+  it("answers for a frame whose fence never signals", async () => {
+    const { el } = mount({ worker: INSTRUMENTED, motion: "static" });
+    await nextEvent(el, SKYE_READY);
+    const worker = TrackedWorker.only();
+    worker.test({ test: "stallFences" });
+    await worker.drawn(1000);
+    expect(worker.terminated).toBe(false);
   });
 
   it("replaces the canvas and the worker when the context is not restored in time", async () => {

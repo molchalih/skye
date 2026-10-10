@@ -56,6 +56,8 @@ const TOKEN = /[A-Za-z_]\w*|(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?\w*|\s+|[^]/g;
 const IDENTIFIER = /^[A-Za-z_]/;
 const RESERVED_PREFIX = /^(?:gl|GL)_/;
 const DIRECTIVE = /^#\s*\w*/;
+// A decimal float literal with a point, its exponent optional and no suffix: the integer part, the fraction, the rest.
+const FLOAT = /^(?=\.?\d)(\d*)\.(\d*)([eE][-+]?\d+)?$/;
 const MACRO = /^#\s*define\s+(\w+)/;
 const PRECISION = new Set(["lowp", "mediump", "highp"]);
 // Directives that name program identifiers; the others (#version, #extension, #pragma, #line, #error) stay whole.
@@ -183,7 +185,8 @@ function* glslTokens(src: string): Generator<Token> {
 
 /**
  * Each uniform in the default block of a minified program, the ones with a
- * location the API looks up by name, with its type. Blocks are skipped.
+ * location the API looks up by name, with its type: `vec3[]` for an array of
+ * vec3. Blocks are skipped.
  */
 export function uniforms(src: string): Map<string, string> {
   const tokens = [...glslTokens(src)].filter((t) => !isBlank(t.text));
@@ -199,10 +202,94 @@ export function uniforms(src: string): Map<string, string> {
       const d = tokens[k];
       if (d?.text === "[") brackets++;
       else if (d?.text === "]") brackets--;
-      else if (brackets === 0 && d?.kind === "name") found.set(d.text, type);
+      else if (brackets === 0 && d?.kind === "name")
+        found.set(d.text, tokens[k + 1]?.text === "[" ? `${type}[]` : type);
     }
   }
   return found;
+}
+
+/**
+ * Each function a minified program defines, by name, with the token range of
+ * every definition (overloads included), from its return type through its
+ * closing brace. A definition is a top-level declaration whose first `(`
+ * follows a declared name with no `=` before it, and whose `)` is followed by
+ * a body. Prototypes, structs, blocks, globals and directives are not.
+ */
+function functionDefinitions(tokens: readonly Token[]): Map<string, [number, number][]> {
+  const found = new Map<string, [number, number][]>();
+  let depth = 0;
+  // The declaration under way at the top level: where it starts, its name once its first `(` shows it is a function,
+  // and whether an `=` came first, which makes the `(` part of an initializer.
+  let start = 0;
+  let name: string | undefined;
+  let assigned = false;
+  let inDirective = false;
+  let previous: Token | undefined;
+  let body = false;
+  for (const [i, t] of tokens.entries()) {
+    if (t.text === "\n") {
+      inDirective = false;
+      // A directive inside a definition would be cut in two by removing it: such a function is never a candidate.
+      if (depth === 0) start = i + 1;
+      else name = undefined;
+      continue;
+    }
+    if (inDirective || t.text.startsWith("#")) {
+      inDirective = true;
+      continue;
+    }
+    if (isBlank(t.text)) continue;
+    if (t.text === "{") {
+      if (depth === 0) body = name !== undefined && previous?.text === ")";
+      depth++;
+    } else if (t.text === "}") {
+      depth--;
+      if (depth === 0) {
+        if (body && name !== undefined)
+          found.set(name, [...(found.get(name) ?? []), [start, i + 1]]);
+        start = i + 1;
+        name = undefined;
+        assigned = false;
+        body = false;
+      }
+    } else if (depth === 0 && t.text === ";") {
+      start = i + 1;
+      name = undefined;
+      assigned = false;
+    } else if (depth === 0 && t.text === "=") {
+      assigned = true;
+    } else if (depth === 0 && t.text === "(" && name === undefined && !assigned) {
+      if (previous?.kind === "name") name = previous.text;
+    }
+    previous = t;
+  }
+  return found;
+}
+
+/**
+ * Drops every function the program never calls, until none is left: one is
+ * called when its name appears anywhere outside its own definitions, in code
+ * or in a directive. `main` stays. GLSL compilers drop such functions too, so
+ * the program compiles as before; its text just stops shipping them, such as
+ * the noise block's `vnoise` in the glass, which calls only `hash12`.
+ */
+export function dropUnusedFunctions(src: string): string {
+  let out = src;
+  for (;;) {
+    const tokens = [...glslTokens(out)];
+    const inside = (ranges: readonly [number, number][], i: number): boolean =>
+      ranges.some(([from, to]) => i >= from && i < to);
+    const unused = [...functionDefinitions(tokens)].find(
+      ([name, ranges]) =>
+        name !== "main" && !tokens.some((t, i) => t.text === name && !inside(ranges, i)),
+    );
+    if (unused === undefined) return out;
+    out = tokens
+      .filter((_, i) => !inside(unused[1], i))
+      .map((t) => t.text)
+      .join("");
+  }
 }
 
 /**
@@ -253,6 +340,28 @@ export function renameIdentifiers(src: string, names: ReadonlyMap<string, string
   return out;
 }
 
+/**
+ * Writes each float literal with a point in its shortest form for the same
+ * value: no trailing zeros in the fraction and no leading zeros before the
+ * point, so `1.0` becomes `1.`, `0.50` becomes `.5` and `0.0` becomes `0.`.
+ * Integers, exponent-only and suffixed literals are left as written.
+ */
+export function shortenFloats(src: string): string {
+  let out = "";
+  for (const t of glslTokens(src)) {
+    const m = t.kind === "fixed" ? FLOAT.exec(t.text) : null;
+    if (m === null) {
+      out += t.text;
+      continue;
+    }
+    const [, whole = "", fraction = "", exponent = ""] = m;
+    const digits = whole.replace(/^0+/, "");
+    const rest = fraction.replace(/0+$/, "");
+    out += `${digits === "" && rest === "" ? "0" : digits}.${rest}${exponent}`;
+  }
+  return out;
+}
+
 /** Replaces each `#include "file"` line with that file's text, read through `read`. Includes do not nest. */
 export function resolveIncludes(src: string, read: (file: string) => string): string {
   return src
@@ -271,51 +380,115 @@ export function exportName(file: string): string | undefined {
   return `${m[1].toUpperCase().replace(/-/g, "_")}_${m[2] === "vert" ? "VS" : "FS"}`;
 }
 
-/**
- * Every program source keyed by export name, and for each program (`SKY` for
- * `sky.*.glsl`) the name each of its uniforms has in the sources.
- */
-export interface Shaders {
-  readonly programs: ReadonlyMap<string, string>;
-  readonly uniforms: ReadonlyMap<string, ReadonlyMap<string, string>>;
+/** A uniform in the default block: its name in the shipped program and its GLSL type. */
+export interface Uniform {
+  readonly name: string;
+  readonly type: string;
 }
 
 /**
- * Builds every program source in `dir`, in file-name order, with the names it
- * declares shortened, or kept with `readable`.
+ * Every program source keyed by export name, and for each program (`SKY` for
+ * `sky.*.glsl`) its uniforms keyed by their names in the sources, in the order
+ * the stages declare them.
+ */
+export interface Shaders {
+  readonly programs: ReadonlyMap<string, string>;
+  readonly uniforms: ReadonlyMap<string, ReadonlyMap<string, Uniform>>;
+}
+
+/**
+ * Builds every program source in `dir`, in file-name order, without the
+ * functions it never calls, and with the names it declares and its float
+ * literals shortened, or both kept with `readable`.
  */
 export function buildShaders(dir: string, readable = false): Shaders {
   const read = (file: string): string => readFileSync(`${dir}/${file}`, "utf8");
   const sources = new Map<string, string>();
   for (const file of readdirSync(dir).sort()) {
     const name = exportName(file);
-    if (name !== undefined) sources.set(name, minifyGlsl(resolveIncludes(read(file), read)));
+    if (name !== undefined)
+      sources.set(name, dropUnusedFunctions(minifyGlsl(resolveIncludes(read(file), read))));
   }
   const names = readable ? new Map<string, string>() : shortNames(sources.values());
   const programs = new Map<string, string>();
-  const byProgram = new Map<string, Map<string, string>>();
+  const byProgram = new Map<string, Map<string, Uniform>>();
   for (const [name, src] of sources) {
-    programs.set(name, renameIdentifiers(src, names));
+    programs.set(name, readable ? src : shortenFloats(renameIdentifiers(src, names)));
     const program = name.replace(/_[VF]S$/, "");
-    for (const uniform of uniforms(src).keys()) {
-      const map = byProgram.get(program) ?? new Map<string, string>();
-      byProgram.set(program, map.set(uniform, names.get(uniform) ?? uniform));
+    for (const [uniform, type] of uniforms(src)) {
+      const map = byProgram.get(program) ?? new Map<string, Uniform>();
+      if (!map.has(uniform)) map.set(uniform, { name: names.get(uniform) ?? uniform, type });
+      byProgram.set(program, map);
     }
   }
   return { programs, uniforms: byProgram };
 }
 
+// The letter `Program` reads for each uniform type it can upload, and how many floats the value takes.
+const KINDS: Readonly<Record<string, readonly [kind: string, size: number]>> = {
+  float: ["f", 1],
+  int: ["i", 1],
+  sampler2D: ["i", 1],
+  vec2: ["2", 2],
+  vec3: ["3", 3],
+  vec4: ["4", 4],
+};
+
+/** Where a uniform's value starts in its program's `values`, and how many floats it takes. */
+export interface Slot {
+  readonly offset: number;
+  readonly size: number;
+}
+
+/**
+ * A program's uniform table, which `Program` reads: one entry per uniform,
+ * space-separated, each its kind (`f` float, `i` int or sampler unit, `2` to
+ * `4` a vector of that many floats) and then its name. With it, each
+ * uniform's slot in the program's `values`. An array is refused: the table
+ * has one value per uniform, so only its first element would ever upload.
+ */
+export function uniformTable(program: ReadonlyMap<string, Uniform>): {
+  table: string;
+  slots: Map<string, Slot>;
+} {
+  const entries: string[] = [];
+  const slots = new Map<string, Slot>();
+  let offset = 0;
+  for (const [uniform, { name, type }] of program) {
+    if (type.endsWith("[]"))
+      throw new Error(`shaders: uniform ${uniform} is an array, which a uniform table cannot hold`);
+    const kind = KINDS[type];
+    if (kind === undefined)
+      throw new Error(`shaders: uniform ${uniform} has a type Program cannot upload: ${type}`);
+    entries.push(kind[0] + name);
+    slots.set(uniform, { offset, size: kind[1] });
+    offset += kind[1];
+  }
+  return { table: entries.join(" "), slots };
+}
+
 export function renderModule(shaders: Shaders): string {
   let out =
-    "// Generated by scripts/shaders.ts from src/shaders/*.glsl. Do not edit. SKYE_READABLE_SHADERS=1 keeps GLSL names.\n";
+    "// Generated by scripts/shaders.ts from src/shaders/*.glsl. Do not edit. SKYE_READABLE_SHADERS=1 keeps GLSL names.\n" +
+    'import type { Slot, Table } from "../gl/program.ts";\n';
   for (const [name, source] of shaders.programs)
     out += `export const ${name}: string = ${JSON.stringify(source)};\n`;
-  // One constant per program and uniform, `SKY_uRes`, so a pass can only name its own program's uniforms. The bundler
-  // inlines plain string constants; an object per program would stay in the bundle (about 490 B brotli).
-  out += "// Each uniform's name in its program.\n";
-  for (const [program, names] of shaders.uniforms) {
-    for (const [uniform, short] of names)
-      out += `export const ${program}_${uniform}: string = ${JSON.stringify(short)};\n`;
+  // Per program, its uniform table, and one constant per uniform, `SKY_uRes`, for its slot in the program's `values`.
+  // Typed by program and width, so a pass sets a whole vector only into a slot of its own program that is as wide;
+  // src/passes/uniforms.test.ts checks the rest (single components within the width, and each pass naming only its
+  // program's slots). The bundler inlines plain constants, so a pass writes `values[3]` and no uniform name reaches
+  // the bundle outside the table: against a declaration and a name-keyed object per pass, that saves about 450 B
+  // brotli in every entry.
+  out +=
+    "// Each program's uniform table (see Program), and each uniform's slot in the program's values.\n";
+  for (const [program, map] of shaders.uniforms) {
+    const { table, slots } = uniformTable(map);
+    const t = `Table<"${program}">`;
+    out += `export const ${program}_UNIFORMS: ${t} = ${JSON.stringify(table)} as ${t};\n`;
+    for (const [uniform, { offset, size }] of slots) {
+      const slot = `Slot<"${program}", ${size}>`;
+      out += `export const ${program}_${uniform}: ${slot} = ${offset} as ${slot};\n`;
+    }
   }
   return out;
 }

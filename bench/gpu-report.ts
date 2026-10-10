@@ -69,7 +69,10 @@ function startup(r: Results, lines: string[]): void {
   lines.push(
     `The core bundled into one minified ES module (${s.bundle.bytes} B, ${s.bundle.gzip} B gzip, ${s.bundle.brotli} B brotli), ` +
       `imported from a blob into a fresh page, then createSky at ${s.input.width}×${s.input.height}, ${s.input.tier}. ` +
-      "Cold: a new browser, so an empty GPU program cache. Warm: a new page in that browser. Medians.",
+      "Cold: a new browser, so an empty GPU program cache. Warm: a new page in that browser. Medians. " +
+      "*Ready* runs from createSky (which creates the context) to the ready event; *first frame* to the first " +
+      "render's pixels read back. *Blocking* is the main-thread time the sky takes before it can draw: the createSky " +
+      "task plus its compile polls, which are counted under *polls*. The first render is in its own column.",
   );
   lines.push("");
   const row = (label: string, list: typeof s.cold) => [
@@ -80,6 +83,10 @@ function startup(r: Results, lines: string[]): void {
     f(median(list.map((x) => x.readyMs))),
     f(median(list.map((x) => x.firstRenderMs)), 3),
     f(median(list.map((x) => x.firstFrameMs))),
+    f(median(list.map((x) => x.createMs + x.skyTaskMs))),
+    f(median(list.map((x) => x.longestTaskMs))),
+    f(median(list.map((x) => x.skyTasks)), 0),
+    f(Math.max(0, ...list.map((x) => x.longTasks)), 0),
     f(median(list.map((x) => x.heapMB)), 2),
   ];
   lines.push(
@@ -92,6 +99,10 @@ function startup(r: Results, lines: string[]): void {
         "ready ms (compile+link)",
         "first render CPU ms",
         "first frame ms",
+        "blocking ms",
+        "longest task ms",
+        "polls",
+        "long tasks (max)",
         "heap MB",
       ],
       [row("cold", s.cold), row("warm", s.warm)],
@@ -589,7 +600,7 @@ function hotspots(r: Results, lines: string[]): void {
   if (r.startup !== null) {
     const c = r.startup.cold;
     items.push(
-      `Startup (cold): ${f(median(c.map((x) => x.firstFrameMs)), 1)} ms to the first frame, of which ${f(median(c.map((x) => x.readyMs)), 1)} ms waiting for shader compile and link; import ${f(median(c.map((x) => x.importMs)), 1)} ms.`,
+      `Startup (cold): ${f(median(c.map((x) => x.firstFrameMs)), 1)} ms to the first frame, of which ${f(median(c.map((x) => x.readyMs)), 1)} ms waiting for shader compile and link; import ${f(median(c.map((x) => x.importMs)), 1)} ms; the main thread blocked ${f(median(c.map((x) => x.createMs + x.skyTaskMs)), 1)} ms of it.`,
     );
   }
   for (const it of items) lines.push(`- ${it}`);

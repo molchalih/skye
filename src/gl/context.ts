@@ -1,21 +1,38 @@
-import { Program } from "./program.ts";
+import { Program, type Table } from "./program.ts";
 import { Target, type TargetKind } from "./target.ts";
 
 /** A canvas skye can draw into: on the main thread or in a worker. */
 export type SkyCanvas = HTMLCanvasElement | OffscreenCanvas;
 
-/** v6's context attributes, except that the drawing buffer is not preserved between frames. */
+/**
+ * v6's context attributes, except that the drawing buffer is not preserved
+ * between frames, it has no depth or stencil buffer (no pass tests either),
+ * and the browser picks the GPU. Left out, powerPreference is "default":
+ * Chrome treats it as "low-power", Firefox asks for the discrete GPU only for
+ * "high-performance", and Safari puts a page's canvas on the GPU driving its
+ * window (in a worker, on the system default). A GPU switch after that is a
+ * context loss, which the sky recovers from. "high-performance" would wake a
+ * discrete GPU for a background, and the auto tier already steps down on a
+ * slower GPU. A `createSky` caller who wants it creates the canvas's context
+ * first: `createSky` takes the context the canvas already has.
+ */
 export const CONTEXT_ATTRIBUTES: Readonly<WebGLContextAttributes> = Object.freeze({
   antialias: false,
   alpha: false,
+  depth: false,
+  stencil: false,
   premultipliedAlpha: false,
   preserveDrawingBuffer: false,
-  powerPreference: "high-performance",
 });
 
 /** Returns a WebGL2 context with skye's attributes, or null when the canvas cannot provide one. */
 export function getWebGL2(canvas: SkyCanvas): WebGL2RenderingContext | null {
   return canvas.getContext("webgl2", CONTEXT_ATTRIBUTES);
+}
+
+/** A texture a pass samples: a render target or the noise texture. */
+export interface Sampled {
+  readonly texture: WebGLTexture;
 }
 
 const FULLSCREEN_TRIANGLE: readonly number[] = [-1, -1, 3, -1, -1, 3];
@@ -43,7 +60,7 @@ export class Gpu {
   #viewportWidth = -1;
   #viewportHeight = -1;
   #unit = -1;
-  readonly #textures: (Target | undefined)[] = [undefined, undefined];
+  readonly #textures: (Sampled | undefined)[] = [undefined, undefined, undefined];
   #vertexArray: WebGLVertexArrayObject | undefined;
 
   constructor(gl: WebGL2RenderingContext) {
@@ -54,9 +71,9 @@ export class Gpu {
     this.#quad = this.#createVertexArray(UNIT_QUAD);
   }
 
-  /** Compiles and links a program; with parallel compile the link status is read later. */
-  program(vertex: string, fragment: string): Program {
-    return new Program(this.gl, vertex, fragment);
+  /** Compiles and links a program with its uniform table (see `Program`); with parallel compile the link status is read later. */
+  program<P extends string>(vertex: string, fragment: string, uniforms: Table<P>): Program<P> {
+    return new Program(this.gl, vertex, fragment, uniforms);
   }
 
   target(kind: TargetKind, mipmapped = false): Target {
@@ -87,12 +104,12 @@ export class Gpu {
     }
   }
 
-  /** Binds `target` to texture unit 0 or 1. */
-  bindTexture(unit: 0 | 1, target: Target): void {
-    if (this.#textures[unit] === target) return;
+  /** Binds `source` to texture unit 0, 1 or 2. */
+  bindTexture(unit: 0 | 1 | 2, source: Sampled): void {
+    if (this.#textures[unit] === source) return;
     this.#activate(unit);
-    this.gl.bindTexture(this.gl.TEXTURE_2D, target.texture);
-    this.#textures[unit] = target;
+    this.gl.bindTexture(this.gl.TEXTURE_2D, source.texture);
+    this.#textures[unit] = source;
   }
 
   /** Rebuilds the mip chain of a target, leaving it bound to texture unit 0. */
@@ -136,7 +153,7 @@ export class Gpu {
     for (const b of this.#buffers) gl.deleteBuffer(b);
   }
 
-  #activate(unit: 0 | 1): void {
+  #activate(unit: 0 | 1 | 2): void {
     if (unit === this.#unit) return;
     this.gl.activeTexture(this.gl.TEXTURE0 + unit);
     this.#unit = unit;

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Display } from "../../test/support/display.ts";
 import { disposeSkies, makeSky, next, readPixels, wait } from "../../test/support/sky.ts";
+import { noiseLattice } from "../gl/noise.ts";
 import type { Sky } from "../index.ts";
 
 const COMPLETION_STATUS_KHR = 0x91b1;
@@ -123,6 +124,30 @@ describe("context loss", () => {
     expect(sky.stats().passes).toBeGreaterThan(0);
   });
 
+  it("uploads the noise lattice computed once to every sky and every restored context", async () => {
+    const uploads: unknown[] = [];
+    const watch = (gl: WebGL2RenderingContext): void => {
+      const texImage2D = gl.texImage2D.bind(gl);
+      Reflect.set(gl, "texImage2D", (...args: unknown[]) => {
+        if (args[2] === gl.R16F) uploads.push(args[8]);
+        Reflect.apply(texImage2D, gl, args);
+      });
+    };
+    const first = makeSky(PARAMS, watch);
+    const second = makeSky(PARAMS, watch);
+    await Promise.all([next(first.sky, "ready"), next(second.sky, "ready")]);
+    const ext = loseContextExt(second.gl);
+    ext.loseContext();
+    await next(second.sky, "contextlost");
+    await wait(0);
+    ext.restoreContext();
+    await next(second.sky, "contextrestored");
+    expect(uploads).toHaveLength(3);
+    // One array: a lattice computed again would be a new one.
+    expect(new Set(uploads).size).toBe(1);
+    expect(uploads[0]).toEqual(noiseLattice());
+  });
+
   it("keeps the detail scale across a restore, as v6 keeps _dsc", async () => {
     // Settled at blur 7 the sky buffers run at 0.75 detail; the first frame toward 64 is still under the
     // 8 px switch, so it keeps whatever scale the sky had.
@@ -208,6 +233,43 @@ describe("context loss", () => {
     display.tick();
     expect(frames()).toBe(1);
     expect(nonBlack(readPixels(gl))).toBe(32 * 20);
+  });
+
+  it("stops polling while lost mid-compile, and gets ready once the restored context's programs are done", async () => {
+    let done = false;
+    let polls = 0;
+    const { sky, gl, canvas } = makeSky(PARAMS, (ctx) => {
+      const getExtension = ctx.getExtension.bind(ctx);
+      const getProgramParameter = ctx.getProgramParameter.bind(ctx);
+      Reflect.set(ctx, "getExtension", (name: string) =>
+        name === "KHR_parallel_shader_compile" ? { COMPLETION_STATUS_KHR } : getExtension(name),
+      );
+      vi.spyOn(ctx, "getProgramParameter").mockImplementation((p, pname) => {
+        if (pname !== COMPLETION_STATUS_KHR) return getProgramParameter(p, pname);
+        polls++;
+        return done;
+      });
+    });
+    const seen = record(sky);
+    await wait(20);
+    expect(polls).toBeGreaterThan(0);
+    const ext = loseContextExt(gl);
+    ext.loseContext();
+    await next(sky, "contextlost");
+    const lostPolls = polls;
+    await wait(50);
+    expect(polls).toBe(lostPolls);
+
+    const restored = nextCanvasEvent(canvas, "webglcontextrestored");
+    ext.restoreContext();
+    await restored;
+    await wait(30);
+    // The restored context compiles again, and is not done either.
+    expect(polls).toBeGreaterThan(lostPolls);
+    expect(seen).toEqual(["contextlost"]);
+    done = true;
+    await next(sky, "ready");
+    expect(seen).toEqual(["contextlost", "contextrestored", "ready"]);
   });
 });
 

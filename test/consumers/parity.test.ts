@@ -1,6 +1,13 @@
 import type { Browser, Page } from "playwright";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { compare, describeComparison } from "../parity/compare.ts";
+import {
+  amendedV6Fragments,
+  amendV6Programs,
+  V6_IMAGE_EDITS,
+  v6FragmentSource,
+} from "../parity/image-edits.ts";
+import { referenceLattice } from "../parity/lattice.ts";
 import { drawnSky, ENGINES, launch, openPage, serveStatic, type StaticServer } from "./browsers.ts";
 import { REPO } from "./paths.ts";
 
@@ -35,8 +42,8 @@ function readSkye(page: Page): Promise<Frame> {
   );
 }
 
-// v6 keeps its buffer; once its programs are linked and its size observed, one more static frame is drawn the way
-// its own loop draws one, and read back.
+// v6 keeps its buffer; once its programs are linked and its size observed, it is given the approved image changes,
+// then one more static frame is drawn the way its own loop draws one, and read back.
 async function readV6(page: Page): Promise<Frame> {
   await page.waitForFunction(() => {
     const el = document.getElementById("v6");
@@ -47,6 +54,12 @@ async function readV6(page: Page): Promise<Frame> {
       Number(Reflect.get(el, "_cw")) > 0
     );
   });
+  const v6 = page.locator("#v6");
+  const properties = Object.keys(V6_IMAGE_EDITS);
+  const read = await Promise.all(properties.map((p) => v6.evaluate(v6FragmentSource, p)));
+  const sources = new Map(properties.map((p, i) => [p, read[i] ?? ""]));
+  const fragments = amendedV6Fragments((property) => sources.get(property) ?? "");
+  await v6.evaluate(amendV6Programs, { fragments, lattice: Array.from(referenceLattice()) });
   return page.evaluate(() => {
     const el = document.getElementById("v6");
     const gl: unknown = el === null ? null : Reflect.get(el, "_gl");
@@ -87,7 +100,7 @@ describe.each(ENGINES.map((engine) => [engine.name(), engine] as const))(
       await browser.close();
     });
 
-    test("<skye-view> draws a static scene bit-identical to v6", async () => {
+    test("<skye-view> draws a static scene bit-identical to v6 with the approved image changes", async () => {
       const { page, errors } = await openPage(browser);
       await page.goto(`${server.url}/test/consumers/parity/index.html`);
       await drawnSky(page, "skye");

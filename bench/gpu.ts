@@ -55,10 +55,13 @@ let refreshMs = 1000 / 60;
 // Page-wide observers: long tasks, animation-frame requests, and (for the element phases) every WebGL2 context.
 
 const longTasks: Array<{ start: number; duration: number }> = [];
+function addLongTasks(entries: PerformanceEntryList): void {
+  for (const e of entries) longTasks.push({ start: e.startTime, duration: e.duration });
+}
+let longTaskObserver: PerformanceObserver | null = null;
 try {
-  new PerformanceObserver((list) => {
-    for (const e of list.getEntries()) longTasks.push({ start: e.startTime, duration: e.duration });
-  }).observe({ type: "longtask", buffered: true });
+  longTaskObserver = new PerformanceObserver((list) => addLongTasks(list.getEntries()));
+  longTaskObserver.observe({ type: "longtask", buffered: true });
 } catch {
   // No long-task timing in this browser.
 }
@@ -613,6 +616,37 @@ interface SkyModule {
   createSky: typeof createSky;
 }
 
+/**
+ * Times every timer and frame callback scheduled on the page until `stop`: between createSky and ready these are the
+ * sky's own tasks (its compile polls). Only the callback is timed, not the microtasks that follow it.
+ */
+function timeCallbacks(): { stop(): { count: number; totalMs: number; maxMs: number } } {
+  const setTimer = window.setTimeout;
+  const requestFrame = window.requestAnimationFrame;
+  const times: number[] = [];
+  const timed =
+    <A extends unknown[]>(cb: (...args: A) => void) =>
+    (...args: A): void => {
+      const c0 = performance.now();
+      cb(...args);
+      times.push(performance.now() - c0);
+    };
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the same signature, minus the string handler form
+  window.setTimeout = ((cb: () => void, ms?: number) => setTimer(timed(cb), ms)) as typeof setTimer;
+  window.requestAnimationFrame = (cb) => requestFrame(timed(cb));
+  return {
+    stop() {
+      window.setTimeout = setTimer;
+      window.requestAnimationFrame = requestFrame;
+      return {
+        count: times.length,
+        totalMs: times.reduce((a, b) => a + b, 0),
+        maxMs: Math.max(0, ...times),
+      };
+    },
+  };
+}
+
 async function startup(bundle: string, input: CaseInput): Promise<Startup> {
   const heap0 = heapMB();
   const url = URL.createObjectURL(new Blob([bundle], { type: "text/javascript" }));
@@ -621,11 +655,13 @@ async function startup(bundle: string, input: CaseInput): Promise<Startup> {
   const mod = (await import(/* @vite-ignore */ url)) as SkyModule;
   const importMs = performance.now() - i0;
   const canvas = mountCanvas();
+  const callbacks = timeCallbacks();
   const t0 = performance.now();
   const sky = mod.createSky(canvas, params(input));
   const createMs = performance.now() - t0;
   await whenReady(sky);
   const readyMs = performance.now() - t0;
+  const tasks = callbacks.stop();
   sky.resize(input.width, input.height, input.dpr);
   const r0 = performance.now();
   sky.render(0);
@@ -635,6 +671,10 @@ async function startup(bundle: string, input: CaseInput): Promise<Startup> {
   const firstFrameMs = performance.now() - t0;
   const heap = heapMB() - heap0;
   release(canvas, sky);
+  // The observer delivers entries late, at low priority; take the ones already recorded. A long task is stamped with
+  // its start, so the one that runs createSky began before t0: count every task that overlaps the window.
+  if (longTaskObserver !== null) addLongTasks(longTaskObserver.takeRecords());
+  const long = longTasks.filter((l) => l.start < t0 + firstFrameMs && l.start + l.duration > t0);
   return {
     bundleBytes: bundle.length,
     importMs,
@@ -643,6 +683,10 @@ async function startup(bundle: string, input: CaseInput): Promise<Startup> {
     firstRenderMs,
     firstFrameMs,
     heapMB: heap,
+    skyTasks: tasks.count,
+    skyTaskMs: tasks.totalMs,
+    longestTaskMs: Math.max(createMs, tasks.maxMs),
+    longTasks: long.length,
   };
 }
 

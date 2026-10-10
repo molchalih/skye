@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { compare, describeComparison } from "../../test/parity/compare.ts";
 import { whenReady } from "../../test/parity/harness.ts";
+import { amendV6 } from "../../test/parity/image-edits.ts";
 import { Display } from "../../test/support/display.ts";
 import {
   canvasOf,
@@ -185,6 +186,7 @@ describe("parity with the v6 element", () => {
     });
     await nextEvent(el, SKYE_READY);
     await until(() => Reflect.get(v6, "_glass") && Reflect.get(v6, "_blur"), "v6 programs");
+    amendV6(v6);
     await wait(50);
 
     display.tick();
@@ -204,14 +206,16 @@ describe("parity with the v6 element", () => {
 });
 
 describe("zero-size and hidden containers", () => {
-  function recordTextures(): number[][] {
+  // Render-target storage, which a target allocates without data. The noise texture is uploaded with its data once,
+  // when the sky starts.
+  function recordTargets(): number[][] {
     const sizes: number[][] = [];
     const original = contextMethod("texImage2D");
     vi.spyOn(WebGL2RenderingContext.prototype, "texImage2D").mockImplementation(function (
       this: WebGL2RenderingContext,
       ...args: unknown[]
     ) {
-      sizes.push([Number(args[3]), Number(args[4])]);
+      if (args[8] === null) sizes.push([Number(args[3]), Number(args[4])]);
       Reflect.apply(original, this, args);
     });
     return sizes;
@@ -224,45 +228,45 @@ describe("zero-size and hidden containers", () => {
   }
 
   it("waits in a 0x0 box without drawing, then draws once sized", async () => {
-    const textures = recordTextures();
+    const targets = recordTargets();
     const errors = collectErrors();
     const { el, box } = mount({ motion: "static", quality: "balanced" }, 0, 0);
     await nextEvent(el, SKYE_READY);
     await wait(100);
     expect(el.stats()).toMatchObject({ sky: [0, 0], passes: 0 });
-    expect(textures).toEqual([]);
+    expect(targets).toEqual([]);
 
     box.style.width = "120px";
     box.style.height = "80px";
     await until(() => el.stats()?.passes !== 0, "a frame");
     // The balanced tier caps the ratio at 1.
     expect(el.stats()?.out).toEqual([120, 80]);
-    expect(textures.length).toBeGreaterThan(0);
-    expect(textures.every(([w, h]) => (w ?? 0) > 0 && (h ?? 0) > 0)).toBe(true);
+    expect(targets.length).toBeGreaterThan(0);
+    expect(targets.every(([w, h]) => (w ?? 0) > 0 && (h ?? 0) > 0)).toBe(true);
     expect(errors).toEqual([]);
   });
 
   it("waits under display:none, then draws once shown", async () => {
-    const textures = recordTextures();
+    const targets = recordTargets();
     const errors = collectErrors();
     const { el, box } = mount({ motion: "static", quality: "balanced" });
     box.style.display = "none";
     await nextEvent(el, SKYE_READY);
     await wait(100);
     expect(el.stats()).toMatchObject({ sky: [0, 0], passes: 0 });
-    expect(textures).toEqual([]);
+    expect(targets).toEqual([]);
 
     box.style.display = "block";
     await until(() => el.stats()?.passes !== 0, "a frame");
     expect(el.stats()?.out).toEqual([160, 100]);
-    expect(textures.every(([w, h]) => (w ?? 0) > 0 && (h ?? 0) > 0)).toBe(true);
+    expect(targets.every(([w, h]) => (w ?? 0) > 0 && (h ?? 0) > 0)).toBe(true);
 
     // Hidden again: drawing pauses at the last size instead of shrinking to nothing.
     box.style.display = "none";
     await wait(50);
     el.setAttribute("hour", "3");
     await wait(50);
-    expect(textures.every(([w, h]) => (w ?? 0) > 0 && (h ?? 0) > 0)).toBe(true);
+    expect(targets.every(([w, h]) => (w ?? 0) > 0 && (h ?? 0) > 0)).toBe(true);
     expect(errors).toEqual([]);
   });
 });

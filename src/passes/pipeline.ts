@@ -1,5 +1,6 @@
 import type { Layout } from "../core/layout.ts";
-import type { Gpu } from "../gl/context.ts";
+import type { Gpu, Sampled } from "../gl/context.ts";
+import { noiseTexture } from "../gl/noise.ts";
 import type { Program } from "../gl/program.ts";
 import type { Target } from "../gl/target.ts";
 import { BlurPass } from "./blur.ts";
@@ -10,7 +11,7 @@ import { ParticlesPass } from "./particles.ts";
 import { raysActive, RaysPass } from "./rays.ts";
 import { SkyPass } from "./sky.ts";
 
-/** The six passes and their render targets, run in v6's order. */
+/** The six passes, their render targets and the noise texture the sky and the glass's frost read, run in v6's order. */
 export class Pipeline {
   readonly #gpu: Gpu;
   readonly #sky: SkyPass;
@@ -25,6 +26,7 @@ export class Pipeline {
   readonly #raysTarget: Target;
   readonly #blurA: Target;
   readonly #blurB: Target;
+  readonly #noise: Sampled;
 
   constructor(gpu: Gpu) {
     this.#gpu = gpu;
@@ -48,6 +50,8 @@ export class Pipeline {
     this.#raysTarget = gpu.target("r8");
     this.#blurA = gpu.target("rgba8");
     this.#blurB = gpu.target("rgba8");
+    // After the programs, so the driver compiles them while the lattice is computed.
+    this.#noise = noiseTexture(gpu.gl);
   }
 
   /** True once every program can be checked without stalling. */
@@ -80,13 +84,20 @@ export class Pipeline {
 
   draw(f: PassFrame): void {
     const gpu = this.#gpu;
-    this.#sky.draw(gpu, f, this.#skyTarget);
+    this.#sky.draw(gpu, f, this.#noise, this.#skyTarget);
     this.#composite.draw(gpu, f, this.#skyTarget, this.#sceneTarget);
     this.#particles.draw(gpu, f, this.#sceneTarget);
     gpu.generateMipmaps(this.#sceneTarget);
     if (raysActive(f)) this.#rays.draw(gpu, f, this.#sceneTarget, this.#raysTarget);
     const blurring = f.layout.blurring;
-    this.#glass.draw(gpu, f, this.#sceneTarget, this.#raysTarget, blurring ? this.#blurA : null);
+    this.#glass.draw(
+      gpu,
+      f,
+      this.#sceneTarget,
+      this.#raysTarget,
+      blurring ? this.#blurA : null,
+      this.#noise,
+    );
     if (blurring) this.#blur.draw(gpu, f, this.#blurA, this.#blurB);
   }
 
@@ -99,5 +110,6 @@ export class Pipeline {
     this.#raysTarget.dispose();
     this.#blurA.dispose();
     this.#blurB.dispose();
+    this.#gpu.gl.deleteTexture(this.#noise.texture);
   }
 }

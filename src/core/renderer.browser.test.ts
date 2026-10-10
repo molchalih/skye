@@ -40,6 +40,46 @@ const failLinks: Fake = (gl) => {
   });
 };
 
+/** What a stubbed driver was asked while the sky compiled. */
+interface Driver {
+  /** Whether a parallel-compiling driver reports the programs done. */
+  done: boolean;
+  /** Whether links succeed. */
+  links: boolean;
+  completionReads: number;
+  linkReads: number;
+}
+
+function driver(links = true): Driver {
+  return { done: false, links, completionReads: 0, linkReads: 0 };
+}
+
+/**
+ * A driver that compiles in the background until `d.done`, with the extension (`parallel`), or one without it,
+ * whose link status is final as soon as it is read. Counts the reads of either status.
+ */
+function compiling(d: Driver, parallel: boolean): Fake {
+  return (gl) => {
+    const getExtension = gl.getExtension.bind(gl);
+    const getProgramParameter = gl.getProgramParameter.bind(gl);
+    Reflect.set(gl, "getExtension", (name: string) => {
+      if (name !== "KHR_parallel_shader_compile") return getExtension(name);
+      return parallel ? { COMPLETION_STATUS_KHR } : null;
+    });
+    vi.spyOn(gl, "getProgramParameter").mockImplementation((p, pname) => {
+      if (pname === COMPLETION_STATUS_KHR) {
+        d.completionReads++;
+        return d.done;
+      }
+      if (pname === gl.LINK_STATUS) {
+        d.linkReads++;
+        if (!d.links) return false;
+      }
+      return getProgramParameter(p, pname);
+    });
+  };
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   for (const s of skies.splice(0)) s.dispose();
@@ -202,4 +242,114 @@ describe("createSky", () => {
     sky.render(Number.NaN);
     expect(sky.stats().passes).toBe(0);
   });
+});
+
+describe("compiling", () => {
+  const MODES = [
+    ["with", true],
+    ["without", false],
+  ] as const;
+
+  it("reads no link status until the driver reports the programs done, then gets ready by itself", async () => {
+    const d = driver();
+    const { sky } = make({}, compiling(d, true));
+    const ready = vi.fn();
+    sky.on("ready", ready);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(d.completionReads).toBeGreaterThan(0);
+    expect(d.linkReads).toBe(0);
+    expect(ready).not.toHaveBeenCalled();
+    d.done = true;
+    // No render: the sky's own poll finds the programs done.
+    await nextEvent(sky, "ready");
+    expect(ready).toHaveBeenCalledTimes(1);
+    expect(d.linkReads).toBeGreaterThan(0);
+    // Polling stops once ready.
+    const reads = d.completionReads;
+    await new Promise((r) => setTimeout(r, 30));
+    expect(d.completionReads).toBe(reads);
+  });
+
+  it("polls every millisecond at first, then once a frame while the driver is still compiling", () => {
+    // Fake timers run each poll at exactly its delay, without the browser's 4 ms stretch.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const d = driver();
+      make({}, compiling(d, true));
+      // Each poll reads the first program's completion and stops there.
+      vi.advanceTimersByTime(25);
+      expect(d.completionReads).toBe(25);
+      vi.advanceTimersByTime(15);
+      expect(d.completionReads).toBe(25);
+      vi.advanceTimersByTime(1);
+      expect(d.completionReads).toBe(26);
+      vi.advanceTimersByTime(160);
+      expect(d.completionReads).toBe(36);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(MODES)(
+    "emits ready after createSky returns, %s parallel compile",
+    async (_, parallel) => {
+      const d = driver();
+      d.done = true;
+      const seen: string[] = [];
+      const { sky } = make({}, compiling(d, parallel));
+      sky.on("ready", () => seen.push("ready"));
+      sky.on("error", () => seen.push("error"));
+      expect(seen).toEqual([]);
+      await nextEvent(sky, "ready");
+      expect(seen).toEqual(["ready"]);
+      sky.resize(32, 20, 1);
+      sky.render(0);
+      expect(sky.stats().passes).toBeGreaterThan(0);
+    },
+  );
+
+  it.each(MODES)(
+    "reports a failed link as error, never ready, %s parallel compile",
+    async (_, parallel) => {
+      const d = driver(false);
+      const seen: string[] = [];
+      const { sky } = make({}, compiling(d, parallel));
+      sky.on("ready", () => seen.push("ready"));
+      sky.on("error", () => seen.push("error"));
+      await new Promise((r) => setTimeout(r, 30));
+      // A parallel-compiling driver has not finished, so the failure is not known yet.
+      expect(seen).toEqual(parallel ? [] : ["error"]);
+      expect(d.linkReads > 0).toBe(!parallel);
+      d.done = true;
+      const error = parallel ? await nextEvent(sky, "error") : undefined;
+      if (parallel) expect(error).toBeInstanceOf(ShaderError);
+      // Polling stops once the failure is known.
+      const reads = d.completionReads;
+      await new Promise((r) => setTimeout(r, 30));
+      expect(d.completionReads).toBe(reads);
+      expect(seen).toEqual(["error"]);
+      sky.render(0);
+      expect(sky.stats().passes).toBe(0);
+    },
+  );
+
+  it.each(MODES)(
+    "stops compiling when disposed mid-compile, %s parallel compile",
+    async (_, parallel) => {
+      const d = driver();
+      const { sky } = make({}, compiling(d, parallel));
+      const events = vi.fn();
+      sky.on("ready", events);
+      sky.on("error", events);
+      // With the extension, after a few polls; without it, before the first, which would read the link status.
+      if (parallel) await new Promise((r) => setTimeout(r, 20));
+      sky.dispose();
+      const reads = d.completionReads + d.linkReads;
+      d.done = true;
+      await new Promise((r) => setTimeout(r, 50));
+      expect(d.completionReads + d.linkReads).toBe(reads);
+      expect(d.linkReads).toBe(0);
+      expect(events).not.toHaveBeenCalled();
+    },
+  );
 });

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Program, ShaderError } from "./program.ts";
+import { Program, ShaderError, type Slot, type Table } from "./program.ts";
 
 const VS = `#version 300 es
 layout(location=0) in vec2 a; void main(){ gl_Position = vec4(a, 0.0, 1.0); }`;
@@ -7,14 +7,20 @@ const FS = `#version 300 es
 precision highp float; uniform float uA; uniform vec3 uB; uniform int uN; uniform float uUnused; out vec4 o;
 void main(){ o = vec4(uB*uA, float(uN)); }`;
 
+// FS's uniforms as a table: uA at 0, uB at 1 to 3, uN at 4, uUnused at 5.
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- branded by hand, as generated.ts brands its own
+const UNIFORMS = "fuA 3uB iuN fuUnused" as Table<"T">;
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- uB's slot, as generated.ts would give it
+const UB = 1 as Slot<"T", 3>;
+
 function context(): WebGL2RenderingContext {
   const gl = document.createElement("canvas").getContext("webgl2");
   if (gl === null) throw new Error("no WebGL2");
   return gl;
 }
 
-// Records the values of each upload as it is made: the uniforms reuse their arrays, so a spy's record of the
-// arguments would show later values.
+// Records the values of each upload as it is made: the program reuses its array, so a spy's record of the arguments
+// would show later values.
 function record(gl: WebGL2RenderingContext, method: "uniform1fv" | "uniform3fv"): number[][] {
   const sent: number[][] = [];
   const upload = gl[method].bind(gl);
@@ -30,21 +36,23 @@ afterEach(() => {
 });
 
 describe("Program", () => {
+  it("holds a value for every uniform in its table", () => {
+    const gl = context();
+    expect(new Program(gl, VS, FS, UNIFORMS).values).toEqual(new Float32Array(6));
+  });
+
   it("uploads each value once, until its float32 bits change", () => {
     const gl = context();
-    const p = new Program(gl, VS, FS);
-    const a = p.float("uA");
-    const b = p.vec3("uB");
-    const n = p.int("uN");
+    const p = new Program(gl, VS, FS, UNIFORMS);
     p.finish();
     p.use();
     const floats = record(gl, "uniform1fv");
     const vectors = record(gl, "uniform3fv");
     const ints = vi.spyOn(gl, "uniform1i");
-    const upload = (x: number, v: readonly number[], i: number): void => {
-      a.value = x;
-      b.value.set(v);
-      n.value = i;
+    const upload = (x: number, v: readonly [number, number, number], i: number): void => {
+      p.values[0] = x;
+      p.values.set(v, UB);
+      p.values[4] = i;
       p.upload();
     };
     // Linking sets every uniform to 0, so nothing goes out while every value is still 0.
@@ -71,12 +79,11 @@ describe("Program", () => {
 
   it("ignores values of uniforms the compiler removed", () => {
     const gl = context();
-    const p = new Program(gl, VS, FS);
-    const unused = p.float("uUnused");
+    const p = new Program(gl, VS, FS, UNIFORMS);
     p.finish();
     p.use();
     const f1 = vi.spyOn(gl, "uniform1fv");
-    unused.value = 1;
+    p.values[5] = 1;
     p.upload();
     expect(f1).not.toHaveBeenCalled();
     expect(gl.getError()).toBe(gl.NO_ERROR);
@@ -84,7 +91,7 @@ describe("Program", () => {
 
   it("reports a compile failure with the driver log", () => {
     const gl = context();
-    const p = new Program(gl, VS, FS.replace("uniform int uN;", ""));
+    const p = new Program(gl, VS, FS.replace("uniform int uN;", ""), UNIFORMS);
     expect(p.isSettled(null)).toBe(true);
     expect(() => p.finish()).toThrow(ShaderError);
     expect(() => p.finish()).toThrow(/uN/);
@@ -93,14 +100,14 @@ describe("Program", () => {
   it("deletes each shader once over finish and dispose", () => {
     const gl = context();
     const deleted = vi.spyOn(gl, "deleteShader");
-    const linked = new Program(gl, VS, FS);
+    const linked = new Program(gl, VS, FS, UNIFORMS);
     linked.finish();
     linked.dispose();
     expect(deleted).toHaveBeenCalledTimes(2);
     expect(new Set(deleted.mock.calls.map(([sh]) => sh)).size).toBe(2);
 
     deleted.mockClear();
-    const failed = new Program(gl, VS, FS.replace("uniform int uN;", ""));
+    const failed = new Program(gl, VS, FS.replace("uniform int uN;", ""), UNIFORMS);
     expect(() => failed.finish()).toThrow(ShaderError);
     failed.dispose();
     expect(deleted).toHaveBeenCalledTimes(2);

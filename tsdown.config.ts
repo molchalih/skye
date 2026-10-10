@@ -1,4 +1,5 @@
 import { defineConfig, type UserConfig } from "tsdown";
+import { hoistTransitiveImports } from "./scripts/hoist-imports.ts";
 
 const config: UserConfig = defineConfig({
   entry: {
@@ -20,6 +21,8 @@ const config: UserConfig = defineConfig({
   // Every chunk lands in dist/ itself, never a subdirectory: `new URL("./worker.js", import.meta.url)` in whichever
   // chunk holds the worker host must find the worker entry beside it.
   outputOptions: { chunkFileNames: "[name]-[hash].js" },
+  // Each entry imports every chunk it needs, so a browser loading dist/ as published requests them in one round.
+  plugins: [hoistTransitiveImports],
 });
 
 export default config;

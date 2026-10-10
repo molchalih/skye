@@ -1,69 +1,99 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { uniforms } from "../../scripts/shaders.ts";
-import { Gpu } from "../gl/context.ts";
-import { Program } from "../gl/program.ts";
-import { BlurPass } from "./blur.ts";
-import { CompositePass } from "./composite.ts";
-import { GlassPass } from "./glass.ts";
-import { ParticlesPass } from "./particles.ts";
-import { RaysPass } from "./rays.ts";
-import { SkyPass } from "./sky.ts";
+import { readUniformTable } from "../../test/support/uniforms.ts";
+import type { Values } from "../gl/program.ts";
+import * as glsl from "../shaders/generated.ts";
 
-// The GLSL types each way of declaring a uniform can drive.
-const TYPES: Record<string, readonly string[]> = {
-  float: ["float"],
-  int: ["int", "sampler2D"],
-  vec2: ["vec2"],
-  vec3: ["vec3"],
-  vec4: ["vec4"],
+// Each pass, the program it draws with (`SKY` for sky.*.glsl) and its vertex stage.
+const PASSES: Record<string, readonly [program: string, vertex: string]> = {
+  sky: ["SKY", "FULLSCREEN_VS"],
+  composite: ["COMPOSITE", "FULLSCREEN_VS"],
+  particles: ["PARTICLES", "PARTICLES_VS"],
+  rays: ["RAYS", "FULLSCREEN_VS"],
+  glass: ["GLASS", "FULLSCREEN_VS"],
+  blur: ["BLUR", "FULLSCREEN_VS"],
 };
 
-interface Declared {
-  readonly vertex: string;
-  readonly fragment: string;
-  readonly uniforms: [method: string, name: string][];
-}
+const generated: Readonly<Record<string, unknown>> = glsl;
 
-/** Builds a pass on a GPU that records the program it asks for and the uniforms it declares on it. */
-function declared(build: (gpu: Gpu) => unknown): Declared {
-  const out: Declared = { vertex: "", fragment: "", uniforms: [] };
-  const program: Program = Object.create(Program.prototype);
-  for (const method of Object.keys(TYPES)) {
-    Reflect.set(program, method, (name: string) => {
-      out.uniforms.push([method, name]);
-      return { value: new Float32Array(4) };
-    });
-  }
-  const gpu: Gpu = Object.create(Gpu.prototype);
-  Reflect.set(gpu, "program", (vertex: string, fragment: string) => {
-    Object.assign(out, { vertex, fragment });
-    return program;
-  });
-  build(gpu);
-  return out;
+function text(name: string): string {
+  const value = generated[name];
+  if (typeof value !== "string") throw new Error(`generated.ts has no string ${name}`);
+  return value;
 }
 
 describe("pass uniforms", () => {
-  const passes: Record<string, (gpu: Gpu) => unknown> = {
-    sky: (gpu) => new SkyPass(gpu),
-    composite: (gpu) => new CompositePass(gpu),
-    particles: (gpu) => new ParticlesPass(gpu),
-    rays: (gpu) => new RaysPass(gpu),
-    glass: (gpu) => new GlassPass(gpu),
-    blur: (gpu) => new BlurPass(gpu),
-  };
-
-  it.each(Object.keys(passes))(
-    "%s declares only its program's uniforms, each as its GLSL type",
+  // Every program's slots start at 0, and a slot is a number when it indexes `values`, so another program's slot
+  // would write the wrong uniform with no type error; the table a pass builds its program with lays its values out.
+  it.each(Object.keys(PASSES))(
+    "%s builds its program with that program's table and writes only its uniforms",
     (pass) => {
-      const build = passes[pass];
-      if (build === undefined) throw new Error(pass);
-      const d = declared(build);
-      const types = new Map([...uniforms(d.vertex), ...uniforms(d.fragment)]);
-      expect(d.uniforms.length).toBeGreaterThan(0);
-      expect(new Set(d.uniforms.map(([, name]) => name)).size).toBe(d.uniforms.length);
-      for (const [method, name] of d.uniforms)
-        expect(TYPES[method], name).toContain(types.get(name));
+      const [program, vertex] = PASSES[pass] ?? ["", ""];
+      const src = readFileSync(new URL(`./${pass}.ts`, import.meta.url), "utf8");
+      const call = /gpu\.program\(\s*glsl\.(\w+),\s*glsl\.(\w+),\s*glsl\.(\w+),?\s*\)/.exec(src);
+      expect(call?.slice(1)).toEqual([vertex, `${program}_FS`, `${program}_UNIFORMS`]);
+      const written = [...src.matchAll(/glsl\.([A-Z]+)_u[A-Z]\w*/g)].map((m) => m[1]);
+      expect(written.length).toBeGreaterThan(0);
+      expect(new Set(written)).toEqual(new Set([program]));
     },
   );
+
+  it.each(Object.keys(PASSES))(
+    "%s's table lists every uniform of its two stages once, with its type's size",
+    (pass) => {
+      const [program, vertex] = PASSES[pass] ?? ["", ""];
+      const types = new Map([...uniforms(text(vertex)), ...uniforms(text(`${program}_FS`))]);
+      const entries = readUniformTable(text(`${program}_UNIFORMS`));
+      const sizes: Record<string, number> = {
+        float: 1,
+        int: 1,
+        sampler2D: 1,
+        vec2: 2,
+        vec3: 3,
+        vec4: 4,
+      };
+      expect(entries.map((u) => u.name).sort()).toEqual([...types.keys()].sort());
+      for (const u of entries) {
+        const type = types.get(u.name) ?? "";
+        expect(u.size, u.name).toBe(sizes[type]);
+        expect(u.int, u.name).toBe(type === "int" || type === "sampler2D");
+      }
+    },
+  );
+
+  // `values[glsl.SKY_uRes + 1]` writes one component, whose index must stay inside the uniform, and
+  // `fill(0, glsl.BLUR_uDir, glsl.BLUR_uDir + 2)` ends at most at its end; types cannot see either.
+  it.each(Object.keys(PASSES))("%s writes each vector's components within its width", (pass) => {
+    const [program] = PASSES[pass] ?? [""];
+    const src = readFileSync(new URL(`./${pass}.ts`, import.meta.url), "utf8");
+    const entries = readUniformTable(text(`${program}_UNIFORMS`));
+    const size = (name: string): number =>
+      entries.find((u) => u.offset === generated[name])?.size ?? 0;
+    const fill = /fill\([^,()]+,\s*glsl\.(\w+),\s*glsl\.(\w+)\s*\+\s*(\d+)\)/g;
+    for (const [use, start = "", end = "", k = ""] of src.matchAll(fill)) {
+      expect(end, use).toBe(start);
+      expect(Number(k), use).toBeLessThanOrEqual(size(start));
+    }
+    const components = src.replace(fill, "").matchAll(/glsl\.([A-Z]+_u\w+)\s*\+\s*(\d+)/g);
+    for (const [use, name = "", k = ""] of components)
+      expect(Number(k), use).toBeLessThan(size(name));
+  });
 });
+
+// Never called: each line below must fail to compile, so `tsc -b` (in `bun run typecheck`) reports any that stops
+// failing as an unused directive.
+export function slotMistakes(
+  sky: Values<"SKY">,
+  sunColor: readonly [number, number, number],
+  sunPos: readonly [number, number],
+): void {
+  // @ts-expect-error a vec3 does not fit a vec2's slot
+  sky.set(sunColor, glsl.SKY_uSunPos);
+  // @ts-expect-error a slot of another program
+  sky.set(sunPos, glsl.COMPOSITE_uSunPos);
+  // @ts-expect-error a vector into a scalar's slot
+  sky.set(sunPos, glsl.SKY_uTime);
+  // @ts-expect-error a plain number is no slot
+  sky.set(sunPos, 2);
+}

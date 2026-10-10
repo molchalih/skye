@@ -43,6 +43,7 @@ float beadLayer(vec2 U, float t){
   float r = 0.06 + 0.16*fract(n.z*10.0);
   return smoothstep(r, 0.0, length(f - p))*life; }
 vec3 aces(vec3 x){ return clamp((x*(2.51*x + 0.03))/(x*(2.43*x + 0.59) + 0.14), 0.0, 1.0); }
+#include "lattice.glsl"
 void main(){
   float asp = uRes.x/uRes.y; vec2 uv = vUv; vec2 U = vec2(uv.x*asp, uv.y);
   float t = uTime*0.2;
@@ -64,9 +65,11 @@ void main(){
   n = vec2(dFdx(hgt), dFdy(hgt))*(uRes.y/900.0)*1.6;
   if (uFrost > 0.001) {
     vec2 cuv = (uv - 0.5)*vec2(asp, 1.0);
-    frostMask = smoothstep(0.55, 1.15, length(cuv)*1.25 + (vnoise(U*6.0 + uSeed) - 0.5)*0.5)*uFrost;
+    // the frost's value noise, its grain included, reads the lattice texture on unit 2 (lattice.glsl); the drops and
+    // the film grain keep hash12
+    frostMask = smoothstep(0.55, 1.15, length(cuv)*1.25 + (tnoise(U*6.0 + uSeed) - 0.5)*0.5)*uFrost;
     // fn and this normal offset are weighted by frostMask, so where it is 0 they change nothing
-    if (uDetail > 0.5 && frostMask > 0.0) { fn = vnoise(U*90.0)*0.5 + vnoise(U*180.0)*0.5; n += (vec2(vnoise(U*40.0 + 3.0), vnoise(U*40.0 + 9.0)) - 0.5)*0.02*frostMask; }
+    if (uDetail > 0.5 && frostMask > 0.0) { fn = tnoise(U*90.0)*0.5 + tnoise(U*180.0)*0.5; n += (vec2(tnoise(U*40.0 + 3.0), tnoise(U*40.0 + 9.0)) - 0.5)*0.02*frostMask; }
     lod = max(lod, frostMask*3.5);
   }
   float wet = uWet*(1.0 - trailClear)*(1.0 - dropMask);
