@@ -1,23 +1,23 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { SkyeParams } from "../../src/index.ts";
-import { expectParity, frameTimes } from "./expect.ts";
-import { ParityPair } from "./harness.ts";
+import { expectLook, frameTimes } from "./expect.ts";
+import { LookPair } from "./harness.ts";
 
-// Smaller than the other parity boxes: these sequences are long, and software GL in headless Chromium is slow.
+// Smaller than the other boxes: these sequences are long, and software GL in headless Chromium is slow.
 const WIDTH = 240;
 const HEIGHT = 150;
-// v6's blur tween lasts 0.62 s, about 38 frames at 60 fps; 42 frames end in the settled, shrunk canvas.
+// The blur tween lasts 0.62 s, about 38 frames at 60 fps; 42 frames end in the settled, shrunk canvas.
 const FADE_FRAMES = 42;
 const SEQUENCE_TIMEOUT_MS = 60_000;
 
-let pair: ParityPair | undefined;
+let pair: LookPair | undefined;
 
 afterEach(() => {
   pair?.dispose();
   pair = undefined;
 });
 
-describe("blur fade parity with v6", () => {
+describe("blur fade look against the approved build", () => {
   // The high tier caps the ratio at 1.5, so ratio 2 changes the buffer sizes and the blur radius in buffer px.
   it.each([1, 2])(
     "0 → 12 → 0 at device pixel ratio %i",
@@ -29,14 +29,14 @@ describe("blur fade parity with v6", () => {
         quality: "high",
         blur: 0,
       };
-      const p = await ParityPair.create(base, WIDTH, HEIGHT, { devicePixelRatio: ratio });
+      const p = await LookPair.create(base, WIDTH, HEIGHT, { devicePixelRatio: ratio });
       pair = p;
       const sizes = new Set<string>();
       let t = 0;
       const run = (count: number, label: string): void => {
         for (const time of frameTimes(t, count)) {
           const f = p.frame(time);
-          expectParity(f, `${label} t=${time.toFixed(3)}`);
+          expectLook(f, `${label} t=${time.toFixed(3)}`);
           sizes.add(`${f.width}x${f.height}`);
         }
         t += count / 60;
@@ -53,11 +53,11 @@ describe("blur fade parity with v6", () => {
   );
 
   it("static deep blur at the low tier", async () => {
-    pair = await ParityPair.create(
+    pair = await LookPair.create(
       { scene: "snowy", hour: 12, motion: "static", quality: "low", blur: 24 },
       WIDTH,
       HEIGHT,
     );
-    expectParity(pair.frame(0), "static blur 24");
+    expectLook(pair.frame(0), "static blur 24");
   });
 });

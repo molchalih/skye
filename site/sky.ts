@@ -1,7 +1,7 @@
 // What the page needs to know about a sky beyond its params: where the sun and moon are, which values a scene
 // can show, and roughly how bright it renders. Scene rules come from the renderer's own table.
 import { solarPosition, type SolarPosition } from "../src/astro/index.ts";
-import { SCENES } from "../src/core/tables.ts";
+import { coverFloor, SCENES } from "../src/core/scenes.ts";
 import type { ResolvedParams, SceneName } from "../src/index.ts";
 
 export function clamp(v: number, lo: number, hi: number): number {
@@ -25,7 +25,7 @@ function moonAt(p: ResolvedParams): SolarPosition {
 
 /** The intensity a scene accepts: storms never fall below their floor. */
 export function intensityRange(scene: SceneName): readonly [number, number] {
-  return [SCENES[scene].intMin ?? 0, 1];
+  return [SCENES[scene].minIntensity, 1];
 }
 
 /**
@@ -35,12 +35,7 @@ export function intensityRange(scene: SceneName): readonly [number, number] {
  */
 export function coverRange(scene: SceneName, intensity: number): readonly [number, number] {
   const def = SCENES[scene];
-  let lo = 0;
-  if (def.rain) lo = Math.max(lo, (0.4 + 0.45 * intensity) * def.rain);
-  if (def.snow) lo = Math.max(lo, (0.35 + 0.4 * intensity) * def.snow);
-  if (def.covMin !== undefined) lo = Math.max(lo, def.covMin);
-  const hi = def.covMax ?? 1;
-  return [Math.min(lo, hi), hi];
+  return [Math.min(coverFloor(def, intensity), def.maxCover), def.maxCover];
 }
 
 /** The wind skye uses when `wind` is unset: the scene's own, scaled by intensity. */

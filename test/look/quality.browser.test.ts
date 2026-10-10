@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { SkyeParams } from "../../src/index.ts";
-import { expectParity, frameTimes } from "./expect.ts";
-import { ParityPair } from "./harness.ts";
+import { expectLook, frameTimes } from "./expect.ts";
+import { LookPair } from "./harness.ts";
 
 const WIDTH = 320;
 const HEIGHT = 200;
@@ -15,11 +15,11 @@ const VIEWS: SkyeParams[] = [
   { scene: "haze", hour: 9 },
 ];
 
-describe("static parity with v6 per setting", () => {
-  let pair: ParityPair;
+describe("static look per setting, against the approved build", () => {
+  let pair: LookPair;
 
   beforeAll(async () => {
-    pair = await ParityPair.create(STATIC, WIDTH, HEIGHT);
+    pair = await LookPair.create(STATIC, WIDTH, HEIGHT);
   });
 
   afterAll(() => {
@@ -27,7 +27,6 @@ describe("static parity with v6 per setting", () => {
   });
 
   const cases: { name: string; params: SkyeParams }[] = [
-    // Eco is held to v6 amended with an eco row (image-edits.ts), as the gate holds every other approved change.
     ...(["eco", "low", "balanced", "high", "auto"] as const).flatMap((quality) =>
       VIEWS.map((v) => ({ name: `quality ${quality}, ${v.scene}`, params: { ...v, quality } })),
     ),
@@ -35,7 +34,7 @@ describe("static parity with v6 per setting", () => {
       name: `glass off, ${scene}`,
       params: { scene, hour: 13, glass: false },
     })),
-    // Out-of-range values reach v6 as given, so its clamping is compared with skye's.
+    // Out-of-range values, so clamping is covered.
     ...[0, 0.12, 1, 9].flatMap((focus) =>
       (["rainy", "snowy"] as const).map((scene) => ({
         name: `focus ${focus}, ${scene}`,
@@ -50,11 +49,11 @@ describe("static parity with v6 per setting", () => {
 
   it.each(cases)("$name", ({ params }) => {
     pair.update({ ...STATIC, glass: true, focus: undefined, exposure: undefined, ...params });
-    expectParity(pair.frame(0), "static frame");
+    expectLook(pair.frame(0), "static frame");
   });
 });
 
-describe("parity with v6 at device pixel ratios above 1", () => {
+describe("look at device pixel ratios other than 1", () => {
   // Low and balanced cap the ratio at 1, high at 1.5; 1.25 stays under the cap, so buffers scale by a fraction.
   // Eco caps it at 0.75, below one canvas pixel per CSS px; the page scales the canvas up.
   const cases = [
@@ -66,46 +65,44 @@ describe("parity with v6 at device pixel ratios above 1", () => {
   ] as const;
 
   it.each(cases)("$quality at ratio $ratio", async ({ quality, ratio, canvas }) => {
-    const pair = await ParityPair.create(
+    const pair = await LookPair.create(
       { ...STATIC, scene: "rainy", hour: 13, quality },
       WIDTH,
       HEIGHT,
       { devicePixelRatio: ratio },
     );
-    const before = window.devicePixelRatio;
     try {
       const f = pair.frame(0);
       expect([f.width, f.height]).toEqual(canvas);
-      expectParity(f, "static frame");
-      // The ratio is stubbed only while v6 draws.
-      expect(window.devicePixelRatio).toBe(before);
+      expectLook(f, "static frame");
     } finally {
       pair.dispose();
     }
   });
 });
 
-describe("parity with v6 for an explicit wind", SEQUENCES, () => {
+describe("look with an explicit wind", SEQUENCES, () => {
   // Still air and a reversed wind: the two values the scene's own wind range never produces.
   it.each([0, -2.5])("wind %d over 20 frames", async (wind) => {
-    const pair = await ParityPair.create(
+    const pair = await LookPair.create(
       { scene: "rainy", hour: 15, motion: "full", quality: "balanced", wind },
       WIDTH,
       HEIGHT,
     );
     try {
-      for (const t of frameTimes(0, 20)) expectParity(pair.frame(t), `t=${t.toFixed(3)}`);
+      for (const t of frameTimes(0, 20)) expectLook(pair.frame(t), `t=${t.toFixed(3)}`);
     } finally {
       pair.dispose();
     }
   });
 });
 
-describe("parity with v6 without half-float render targets", SEQUENCES, () => {
-  let pair: ParityPair;
+describe("look without half-float render targets", SEQUENCES, () => {
+  let pair: LookPair;
 
   beforeAll(async () => {
-    pair = await ParityPair.create(STATIC, WIDTH, HEIGHT, { floatTargets: false });
+    // v6 times the storm's frames to its lightning schedule, which draws from the same random sequence.
+    pair = await LookPair.create(STATIC, WIDTH, HEIGHT, { floatTargets: false, v6: true });
   });
 
   afterAll(() => {
@@ -113,8 +110,8 @@ describe("parity with v6 without half-float render targets", SEQUENCES, () => {
   });
 
   it("both fall back to RGBA8", () => {
-    expect(pair.v6FloatTargets).toBe(false);
     expect(pair.skyeStats().hdr).toBe("rgba8");
+    expect(pair.approvedStats().hdr).toBe("rgba8");
   });
 
   const cases: { name: string; params: SkyeParams }[] = [
@@ -126,17 +123,17 @@ describe("parity with v6 without half-float render targets", SEQUENCES, () => {
 
   it.each(cases)("$name", ({ params }) => {
     pair.update({ ...STATIC, blur: 0, ...params });
-    expectParity(pair.frame(0), "static frame");
+    expectLook(pair.frame(0), "static frame");
   });
 
   it("storm animated through a strike", () => {
     pair.update({ scene: "storm", hour: 21, blur: 0, motion: "full" });
-    expectParity(pair.frame(0), "t=0");
+    expectLook(pair.frame(0), "t=0");
     let flash = 0;
     for (const t of frameTimes(pair.nextStrike - 2 / 60, 20)) {
       const f = pair.frame(t);
-      expectParity(f, `t=${t.toFixed(3)}`);
-      flash = Math.max(flash, f.flash);
+      expectLook(f, `t=${t.toFixed(3)}`);
+      flash = Math.max(flash, f.v6?.flash ?? 0);
     }
     expect(flash).toBeGreaterThan(0);
   });

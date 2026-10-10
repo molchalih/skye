@@ -1,11 +1,11 @@
 // A dedicated worker that renders skye on a transferred OffscreenCanvas frame by frame and posts the pixels back,
-// for the parity gate's worker run. It drives the core directly, like the main-thread harness does.
+// for the look gate's worker run. It drives the core directly, like the main-thread harness does.
 import { createRandom } from "../../src/core/random.ts";
 import { createSky, type Sky } from "../../src/index.ts";
 import type { SkyeParams } from "../../src/index.ts";
 
 /** Requests from the page; each but `update` gets exactly one reply. */
-export type ParityRequest =
+export type SkyRequest =
   | {
       type: "init";
       canvas: OffscreenCanvas;
@@ -19,7 +19,7 @@ export type ParityRequest =
   | { type: "frame"; t: number };
 
 /** Replies to the page. `probe` is sent once on load. */
-export type ParityReply =
+export type SkyReply =
   | { type: "probe"; webgl2: boolean }
   | { type: "ready" }
   | { type: "failed"; message: string }
@@ -28,7 +28,7 @@ export type ParityReply =
 let sky: Sky | undefined;
 let gl: WebGL2RenderingContext | null = null;
 
-function reply(message: ParityReply, transfer: Transferable[] = []): void {
+function reply(message: SkyReply, transfer: Transferable[] = []): void {
   self.postMessage(message, { transfer });
 }
 
@@ -40,7 +40,7 @@ function probe(): boolean {
   }
 }
 
-self.addEventListener("message", (event: MessageEvent<ParityRequest>) => {
+self.addEventListener("message", (event: MessageEvent<SkyRequest>) => {
   const request = event.data;
   try {
     if (request.type === "init") {

@@ -1,4 +1,4 @@
-// Pass 4: glass and post. Fine drop detail is skipped when the output is blurred.
+// The glass, and post-processing. Fine drop detail is skipped when the output is blurred.
 #version 300 es
 precision highp float;
 uniform sampler2D uScene, uRaysTex; uniform vec2 uRes, uSunUV; uniform float uTime, uRainG, uFrost, uMist, uFlash, uExposure, uSeed, uEnc, uDim, uWet, uRays, uFlare, uDetail; uniform vec3 uSunTint;

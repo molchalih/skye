@@ -1,0 +1,291 @@
+// skye's core as approved on 2026-10-10, frozen: the long-range drift check (CONTRIBUTING.md, Look preservation). Copied once from skye-approved.js; never regenerated or edited.
+//#region src/core/params.d.ts
+/** A weather scene: what the sky shows besides the time of day. */
+type SceneName = "clear" | "cloudy" | "fog" | "rainy" | "storm" | "sleet" | "snowy" | "haze";
+/**
+ * A fixed quality tier, or `"auto"`, which picks low, balanced or high from
+ * the measured frame time. `"eco"` is opt-in only: `"auto"` never picks it.
+ */
+type Quality = "auto" | "eco" | "low" | "balanced" | "high";
+/** A fixed quality tier: what `quality` resolves to at any moment. */
+type Tier = Exclude<Quality, "auto">;
+/** A tier `"auto"` can pick: every tier but `"eco"`. */
+type AutoTier = Exclude<Tier, "eco">;
+/** `"full"` animates, `"static"` draws one frame per change, `"auto"` follows prefers-reduced-motion. */
+type Motion = "auto" | "full" | "static";
+/** Every scene name, in v6's order. */
+export declare const SCENE_NAMES: readonly SceneName[];
+/** Every `quality` value, `"auto"` first, then the tiers from cheapest to finest. */
+export declare const QUALITIES: readonly Quality[];
+/** Every `motion` value. */
+export declare const MOTIONS: readonly Motion[];
+/**
+ * Sky parameters; every field is optional. Numbers that are not finite fall
+ * back to the default, and out-of-range numbers are clamped or wrapped.
+ */
+interface SkyeParams {
+  /** Weather scene. Unknown names resolve to `"cloudy"`. */
+  scene?: SceneName | undefined;
+  /** Cloud cover, clamped to 0-1. */
+  cover?: number | undefined;
+  /** Precipitation / fog / haze strength, clamped to 0-1. */
+  intensity?: number | undefined;
+  /** Cloud wind speed. Absent means the scene's own wind, scaled by intensity. */
+  wind?: number | undefined;
+  /** Cloud pattern seed; any finite number. */
+  seed?: number | undefined;
+  /**
+   * Local clock hour; wraps into [0, 24). The sun's position comes from its
+   * distance to `solarNoon`, so this is clock time, not true solar time.
+   */
+  hour?: number | undefined;
+  /** Degrees, clamped to -66..66. */
+  latitude?: number | undefined;
+  /** Day of the year. Nominally 1-366; the value is used as given, as in v6. */
+  dayOfYear?: number | undefined;
+  /** Local hour of solar noon. */
+  solarNoon?: number | undefined;
+  /** Moon phase; wraps into [0, 1). 0 is new, 0.5 is full. */
+  moonPhase?: number | undefined;
+  /** Rain-on-glass layer. */
+  glass?: boolean | undefined;
+  /** Glass focus depth, clamped to 0.12-1. */
+  focus?: number | undefined;
+  /** Overall brightness (v6 `dim`), clamped to 0.2-1.2. */
+  exposure?: number | undefined;
+  /** Background blur in px, clamped to 0-64. */
+  blur?: number | undefined;
+  /**
+   * Quality tier, or `"auto"` to adapt to frame time among low, balanced and
+   * high. `"eco"` is a fixed tier below low, softer and at a lower frame rate;
+   * `"auto"` never picks it. Unknown values resolve to `"balanced"`.
+   */
+  quality?: Quality | undefined;
+  /** `"static"` renders a single frame; `"auto"` follows prefers-reduced-motion. */
+  motion?: Motion | undefined;
+}
+/**
+ * Params with every field resolved: defaults applied, numbers clamped or
+ * wrapped, names validated. `wind` stays undefined for the scene's own wind.
+ */
+interface ResolvedParams {
+  scene: SceneName;
+  cover: number;
+  intensity: number;
+  wind: number | undefined;
+  seed: number;
+  hour: number;
+  latitude: number;
+  dayOfYear: number;
+  solarNoon: number;
+  moonPhase: number;
+  glass: boolean;
+  focus: number;
+  exposure: number;
+  blur: number;
+  quality: Quality;
+  motion: Motion;
+}
+/** What every absent or invalid field resolves to. None depends on the clock or the calendar. */
+export declare const DEFAULTS: Readonly<ResolvedParams>;
+/**
+ * Applies defaults, clamping and wrapping exactly as v6's attribute parsing
+ * did. Never throws; `null` or `undefined` resolves to `DEFAULTS`.
+ */
+export declare function resolveParams(params: Partial<SkyeParams> | null | undefined): ResolvedParams;
+//#endregion
+//#region src/core/random.d.ts
+/** A function returning a uniform number in [0, 1), like `Math.random`. */
+type RandomSource = () => number;
+//#endregion
+//#region src/core/api.d.ts
+/** Events a sky emits, mapped to their payloads. */
+interface SkyEvents {
+  /**
+   * Every shader program is linked and frames now draw. Fires once, never
+   * synchronously inside `createSky`, so subscribing right after it is enough.
+   */
+  ready: undefined;
+  /**
+   * A shader failed to compile or link; the sky stays blank for good. The
+   * error is kept: a listener added later receives it on a microtask. When no
+   * listener has received it or is subscribed, the next `render` throws it
+   * instead. A sky driven only by `start()` never calls `render`, so this event
+   * is its only report of the failure.
+   */
+  error: Error;
+  /**
+   * The WebGL context was lost and frames stopped. The sky waits for the
+   * browser to restore it; nothing needs to be called meanwhile.
+   */
+  contextlost: undefined;
+  /**
+   * After `contextlost`: the context is back, every GPU resource has been
+   * rebuilt and linked, and frames draw again.
+   */
+  contextrestored: undefined;
+  /**
+   * The automatic quality controller moved to another tier (`quality: "auto"`
+   * only). Never fires for a fixed tier, `"eco"` included, nor when `quality`
+   * itself changes.
+   */
+  tierchange: TierChange;
+}
+/** Payload of the `tierchange` event. */
+interface TierChange {
+  /** The tier now in use: low, balanced or high, never `"eco"`. */
+  quality: AutoTier;
+  /** Its index: 0 low, 1 balanced, 2 high. */
+  tier: number;
+}
+/** Live cost metrics, the shape of v6's `getStats()`. */
+interface SkyeStats {
+  /** Always `"skye"` (v6 reported `"v6"`). */
+  renderer: "skye";
+  /** Tier in use: the fixed `quality`, or the one `"auto"` picked. */
+  quality: Tier;
+  /** Whether the tier adapts to frame time. */
+  auto: boolean;
+  /**
+   * The automatic controller's tier index (0 low, 1 balanced, 2 high), as v6
+   * reported it. Under a fixed `quality`, `"eco"` included, it is not the tier
+   * in use (that is `quality`): it keeps the controller's last value, 1 until
+   * it has moved, and `"auto"` resumes from it. `"eco"` has no index.
+   */
+  tier: number;
+  /**
+   * Smoothed GPU ms per frame; -1 when not measured. Measured only while
+   * `quality` is `"auto"`, or after `probe(true)`, and only with a GPU timer.
+   */
+  gpuMs: number;
+  /** Smoothed CPU ms per frame drawn by the loop; -1 until the loop draws one. */
+  cpuMs: number;
+  /** Frames the loop drew per second over the last second; 0 until a second has passed. */
+  fps: number;
+  /** The loop's frame-rate cap: the tier's, or 30 while a settled blur is shown. */
+  fpsCap: number;
+  /** Eased blur radius in CSS px. */
+  blur: number;
+  /** Canvas backing-store size. */
+  out: [number, number];
+  /** Sky buffer size. */
+  sky: [number, number];
+  /** Scene buffer size. */
+  scene: [number, number];
+  /** Shaded megapixels in the last frame. */
+  mpx: number;
+  /** Draw passes in the last frame. */
+  passes: number;
+  /** Whether a GPU timer is available. */
+  timer: boolean;
+  /** Storage of the HDR render targets: half-float, or RGBA8 (values scaled by 0.2) without `EXT_color_buffer_float`. */
+  hdr: "half-float" | "rgba8";
+  /** Whether frames are static: `motion: "static"`, or `"auto"` under reduced motion. */
+  static: boolean;
+  /** Whether the sky renders in a worker. */
+  worker: boolean;
+}
+/** Options fixed for the life of a sky. */
+interface CreateSkyOptions {
+  /** Random source for lightning; defaults to a generator seeded with `params.seed`. */
+  random?: RandomSource | undefined;
+}
+/**
+ * A sky drawing into one canvas. It expects to be the only user of that
+ * canvas's WebGL context.
+ *
+ * Frames are drawn either by the caller, with `render(t)`, or by the sky's own
+ * loop, with `start()`. While the loop runs, every change (`update`, `resize`,
+ * `setReducedMotion`, regained visibility, a restored context) takes effect on
+ * its next frame; with static motion the loop draws exactly one frame per
+ * change and is otherwise idle.
+ */
+interface Sky {
+  /** Merges `params` into the current ones; the next frame eases toward them. */
+  update(params: Partial<SkyeParams>): void;
+  /**
+   * Sets the CSS size and device pixel ratio the buffers are sized from; the
+   * tier caps the ratio. Until the first call, the canvas's own width and
+   * height stand in for its CSS size, at ratio 1.
+   */
+  resize(cssWidth: number, cssHeight: number, devicePixelRatio: number): void;
+  /**
+   * Draws one frame at animation time `t`, in seconds. The first frame, and the
+   * first after `update`, advances by 1/60 s; later frames by the time since the
+   * previous one, at most 0.1 s. A `t` equal to or before the previous one also
+   * advances by 1/60 s. Draws nothing until the sky is ready, while the context
+   * is lost, after `dispose`, or for a non-finite `t`. Throws a failed shader
+   * build once, when no `"error"` listener has received it.
+   *
+   * Calling it while the loop runs is allowed and draws one extra frame at
+   * `t`. The loop keeps its own clock and frame interval, so the scene jumps
+   * between the two times; drive frames one way only.
+   */
+  render(t: number): void;
+  /**
+   * Starts the sky's own frame loop: one frame per display refresh (from
+   * `requestAnimationFrame`, or a timer at the fps cap where the scope has
+   * none), paced by the fps cap, with the automatic quality controller and the
+   * `cpuMs`/`fps` meters running. Animation time is seconds since the loop's
+   * first frame and keeps counting while stopped or hidden. Frames begin once
+   * the sky is ready. Does nothing if already started. A shader failure leaves
+   * the canvas blank and throws nowhere: listen for `"error"` to learn of it.
+   */
+  start(): void;
+  /** Stops the loop; the last frame stays on the canvas. */
+  stop(): void;
+  /**
+   * Tells the sky whether its canvas can be seen (in the viewport, document
+   * not hidden). While invisible the loop draws nothing; it resumes when
+   * visible again. Visible by default.
+   */
+  setVisible(visible: boolean): void;
+  /**
+   * Tells the sky whether the user prefers reduced motion, which makes
+   * `motion: "auto"` static. The default is the `prefers-reduced-motion` media
+   * query at creation; the sky does not watch it, so the host forwards changes.
+   */
+  setReducedMotion(reduced: boolean): void;
+  /** Current cost metrics, as a new object on every call (a snapshot, not a live view). */
+  stats(): SkyeStats;
+  /**
+   * Turns GPU timing on or off regardless of `quality`; by default it runs only
+   * while `quality` is `"auto"`. Timing needs `EXT_disjoint_timer_query_webgl2`.
+   */
+  probe(on: boolean): void;
+  /**
+   * Stops the loop, stops listening to the canvas, and releases every GPU
+   * resource the sky created. The context itself stays with the canvas. Safe
+   * to call more than once.
+   */
+  dispose(): void;
+  /**
+   * Subscribes to an event; returns the unsubscribe function. Listeners run
+   * after the sky has updated its own state. One that throws is reported like
+   * an uncaught error (`reportError`) and stops neither the other listeners
+   * nor the sky.
+   */
+  on<K extends keyof SkyEvents>(event: K, listener: (payload: SkyEvents[K]) => void): () => void;
+}
+//#endregion
+//#region src/gl/program.d.ts
+/** Compile or link failure, with the driver's logs. */
+export declare class ShaderError extends Error {
+  override readonly name = "ShaderError";
+}
+//#endregion
+//#region src/gl/context.d.ts
+/** A canvas skye can draw into: on the main thread or in a worker. */
+type SkyCanvas = HTMLCanvasElement | OffscreenCanvas;
+//#endregion
+//#region src/core/renderer.d.ts
+/**
+ * Creates a sky drawing into `canvas` with WebGL2. Throws when the canvas
+ * cannot provide a WebGL2 context. A context the canvas already has is used
+ * with its own attributes, such as a `powerPreference` the caller chose.
+ * Shaders compile in the background where the driver allows; listen for
+ * `"ready"` to know when frames start drawing.
+ */
+export declare function createSky(canvas: SkyCanvas, params?: Partial<SkyeParams>, options?: CreateSkyOptions): Sky;
+//#endregion
+export type { AutoTier, CreateSkyOptions, Motion, Quality, RandomSource, ResolvedParams, SceneName, Sky, SkyCanvas, SkyEvents, SkyeParams, SkyeStats, Tier, TierChange };

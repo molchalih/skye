@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>skye as published, beside the approved build</title>
+    <link rel="icon" href="data:," />
+    <script type="importmap">
+      { "imports": { "@a240/skye/define": "../node_modules/@a240/skye/dist/define.js" } }
+    </script>
+    <script type="module">
+      import "@a240/skye/define";
+      import { createSky } from "../../reference/skye-approved.js";
+
+      // The approved build's frame for the element's params, read back in the frame it draws.
+      window.drawApproved = (params, width, height) =>
+        new Promise((resolve, reject) => {
+          const canvas = document.createElement("canvas");
+          const sky = createSky(canvas, params);
+          sky.on("error", reject);
+          sky.on("ready", () => {
+            sky.render(0);
+            const gl = canvas.getContext("webgl2");
+            const pixels = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4);
+            gl.readPixels(
+              0,
+              0,
+              gl.drawingBufferWidth,
+              gl.drawingBufferHeight,
+              gl.RGBA,
+              gl.UNSIGNED_BYTE,
+              pixels,
+            );
+            resolve({
+              width: gl.drawingBufferWidth,
+              height: gl.drawingBufferHeight,
+              pixels: Array.from(pixels),
+            });
+            sky.dispose();
+          });
+          sky.resize(width, height, 1);
+        });
+    </script>
+    <style>
+      .box {
+        position: relative;
+        width: 320px;
+        height: 120px;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      A static scene. No wind: each frame, static ones too, moves the clouds by the wind, and the element draws more
+      frames here than the one the approved build is asked for.
+    -->
+    <div class="box">
+      <skye-view
+        id="skye"
+        scene="cloudy"
+        hour="13"
+        wind="0"
+        latitude="52.37"
+        day-of-year="172"
+        solar-noon="12.7"
+        moon-phase="0.5"
+        quality="balanced"
+        motion="static"
+      ></skye-view>
+    </div>
+  </body>
+</html>

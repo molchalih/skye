@@ -6,6 +6,7 @@ import {
   launch,
   MIN_COLOURS,
   openPage,
+  rendersInWorkersOn,
   serveStatic,
   type StaticServer,
 } from "./browsers.ts";
@@ -43,8 +44,9 @@ describe.each(ENGINES.map((engine) => [engine.name(), engine] as const))(
       expect(main.colours).toBeGreaterThan(MIN_COLOURS);
 
       // The unbundled dist resolves `new URL("./worker.js", import.meta.url)` from the chunk that holds it.
+      // Where workers get no WebGL2, the same element draws on the main thread instead.
       const worker = await drawnSky(page, "worker");
-      expect(worker.worker).toBe(true);
+      expect(worker.worker).toBe(await rendersInWorkersOn(page));
       expect(worker.colours).toBeGreaterThan(MIN_COLOURS);
 
       expect(errors).toEqual([]);

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Display } from "../../test/support/display.ts";
-import { disposeSkies, makeSky, next, wait } from "../../test/support/sky.ts";
+import { disposeSkies, makeSky, next, readPixels, wait } from "../../test/support/sky.ts";
 import type { TierChange } from "../index.ts";
 import { Easer } from "./easing.ts";
 
@@ -73,14 +73,16 @@ describe("Sky loop", () => {
     expect(frames()).toBe(3);
   });
 
-  it("draws exactly one frame per change under static motion", async () => {
+  it("draws each change's frame twice under static motion", async () => {
     const display = new Display().install();
     const { sky, frames } = await readySky({ ...MOTION, motion: "static" });
     expect(sky.stats().static).toBe(true);
     sky.start();
     display.tick();
     display.tick();
-    expect(frames()).toBe(1);
+    display.tick();
+    // The frame and its repeat, for compositors that show a canvas one frame late.
+    expect(frames()).toBe(2);
     expect(display.pending).toBe(0);
 
     const changes: (() => void)[] = [
@@ -92,23 +94,44 @@ describe("Sky loop", () => {
         sky.setVisible(true);
       },
     ];
-    let drawn = 1;
+    let drawn = 2;
     for (const change of changes) {
       change();
       display.tick(500);
       display.tick(500);
-      expect(frames()).toBe(++drawn);
+      display.tick(500);
+      expect(frames()).toBe((drawn += 2));
     }
     // Changes before one frame share it.
     sky.update({ hour: 4 });
     sky.update({ hour: 3 });
     display.tick();
-    expect(frames()).toBe(++drawn);
+    display.tick();
+    expect(frames()).toBe((drawn += 2));
+    // A change while the repeat is pending gets its own pair.
+    sky.update({ hour: 13 });
+    display.tick();
+    sky.update({ hour: 3 });
+    display.tick();
+    display.tick();
+    display.tick();
+    expect(frames()).toBe((drawn += 3));
+    expect(display.pending).toBe(0);
     // Repeating a value is not a change.
     sky.setReducedMotion(true);
     sky.setVisible(true);
     display.tick();
     expect(frames()).toBe(drawn);
+  });
+
+  it("repeats a static frame pixel for pixel", async () => {
+    const display = new Display().install();
+    const { sky, gl } = await readySky({ motion: "static", scene: "storm", quality: "balanced" });
+    sky.start();
+    display.tick();
+    const first = readPixels(gl);
+    display.tick();
+    expect(readPixels(gl)).toEqual(first);
   });
 
   it("makes auto motion static under reduced motion, and animates again without it", async () => {
@@ -123,17 +146,24 @@ describe("Sky loop", () => {
     expect(sky.stats().static).toBe(true);
     display.tick();
     display.tick();
-    expect(frames()).toBe(3);
+    display.tick();
+    expect(frames()).toBe(4);
     sky.setReducedMotion(false);
     display.tick();
     display.tick();
-    expect(frames()).toBe(5);
+    expect(frames()).toBe(6);
     expect(display.pending).toBe(1);
   });
 
   it("advances by v6's intervals from static frames back to animated ones", async () => {
     const display = new Display().install();
-    const step = vi.spyOn(Easer.prototype, "step");
+    // The frame time object is rewritten every frame, so each step's interval is read as it happens.
+    const steps: number[] = [];
+    const step: Easer["step"] = Reflect.get(Easer.prototype, "step");
+    vi.spyOn(Easer.prototype, "step").mockImplementation(function (this: Easer, target, time) {
+      steps.push(Math.round(time.dt * 1e6) / 1e6);
+      return Reflect.apply(step, this, [target, time]);
+    });
     const { sky } = await readySky({ ...MOTION, motion: "auto" });
     sky.setReducedMotion(false);
     sky.start();
@@ -144,7 +174,6 @@ describe("Sky loop", () => {
     sky.setReducedMotion(false);
     display.tick(30);
     // The static frame steps 1/60 s and leaves the interval alone, so the next one spans 530 ms, clamped to 0.1 s.
-    const steps = step.mock.calls.map(([, dt]) => Math.round(dt * 1e6) / 1e6);
     expect(steps).toEqual([0.016667, 0.02, 0.016667, 0.1]);
   });
 

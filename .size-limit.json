@@ -2,17 +2,17 @@
   {
     "name": "@a240/skye",
     "path": "dist/index.js",
-    "limit": "17 kB"
+    "limit": "17.1 kB"
   },
   {
     "name": "@a240/skye/define",
     "path": "dist/define.js",
-    "limit": "20.1 kB"
+    "limit": "20.2 kB"
   },
   {
     "name": "@a240/skye/react",
     "path": "dist/react.js",
-    "limit": "20.7 kB"
+    "limit": "20.75 kB"
   },
   {
     "name": "v6, measured by the same tool (the original budget)",

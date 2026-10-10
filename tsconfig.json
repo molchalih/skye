@@ -34,6 +34,8 @@
     "node_modules",
     "dist",
     "test/reference/weather-sky-v6.js",
+    "test/reference/skye-approved.js",
+    "test/reference/skye-baseline-2026-10.js",
     "test/consumers/types",
     "test/consumers/vite"
   ]

@@ -1,4 +1,4 @@
-// Pass 2: upsample the sky and add the sharp features (moon, stars, meteors, sun disc, bolt core) at scene resolution.
+// The composite: upsample the sky and add the sharp features (moon, stars, meteors, sun disc, bolt core) at scene resolution.
 #version 300 es
 precision highp float;
 uniform sampler2D uSky; uniform vec2 uRes, uSunPos, uMoonPos, uBoltPos;

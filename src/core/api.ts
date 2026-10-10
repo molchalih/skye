@@ -42,17 +42,16 @@ export interface TierChange {
   tier: number;
 }
 
-/** Live cost metrics, the shape of v6's `getStats()`. */
+/** Live cost metrics. */
 export interface SkyeStats {
-  /** Always `"skye"` (v6 reported `"v6"`). */
+  /** Always `"skye"`. */
   renderer: "skye";
   /** Tier in use: the fixed `quality`, or the one `"auto"` picked. */
   quality: Tier;
   /** Whether the tier adapts to frame time. */
   auto: boolean;
   /**
-   * The automatic controller's tier index (0 low, 1 balanced, 2 high), as v6
-   * reported it. Under a fixed `quality`, `"eco"` included, it is not the tier
+   * The automatic controller's tier index (0 low, 1 balanced, 2 high). Under a fixed `quality`, `"eco"` included, it is not the tier
    * in use (that is `quality`): it keeps the controller's last value, 1 until
    * it has moved, and `"auto"` resumes from it. `"eco"` has no index.
    */
@@ -103,8 +102,9 @@ export interface CreateSkyOptions {
  * Frames are drawn either by the caller, with `render(t)`, or by the sky's own
  * loop, with `start()`. While the loop runs, every change (`update`, `resize`,
  * `setReducedMotion`, regained visibility, a restored context) takes effect on
- * its next frame; with static motion the loop draws exactly one frame per
- * change and is otherwise idle.
+ * its next frame; with static motion the loop draws one frame per change,
+ * draws it again on the next display frame (some compositors show a canvas
+ * one frame late), and is otherwise idle.
  */
 export interface Sky {
   /** Merges `params` into the current ones; the next frame eases toward them. */
@@ -126,6 +126,10 @@ export interface Sky {
    * Calling it while the loop runs is allowed and draws one extra frame at
    * `t`. The loop keeps its own clock and frame interval, so the scene jumps
    * between the two times; drive frames one way only.
+   *
+   * Some compositors (WebKit GTK and WPE) show a canvas one frame late: keep
+   * drawing, or follow a lone `render(t)` with another on the next display
+   * frame, or the previous frame stays on screen.
    */
   render(t: number): void;
   /**

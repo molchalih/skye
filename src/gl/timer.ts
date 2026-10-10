@@ -7,8 +7,7 @@ interface TimerQueryExt {
 const MAX_IN_FLIGHT = 4;
 
 /**
- * GPU frame time from `EXT_disjoint_timer_query_webgl2` (v6 `_probeBegin` /
- * `_probePoll`): one TIME_ELAPSED query per frame, harvested a few frames
+ * GPU frame time from `EXT_disjoint_timer_query_webgl2`: one TIME_ELAPSED query per frame, harvested a few frames
  * later into a smoothed average. Queries are pooled and reused.
  */
 export class GpuTimer {

@@ -508,8 +508,10 @@ function references(r: Results, baseline: Results | null, lines: string[]): void
   const frames = Number(r.settings["refFrames"]);
   lines.push(
     `Frame ${frames - 1} (t = ${f((frames - 1) / 60, 3)} s) of a fresh sky, drawn twice to check it is deterministic, in frames/. ` +
-      "With --baseline each is compared under the parity gate's tolerance: at least 99.9 % of " +
-      "channels within 1/255 and none beyond 4/255.",
+      "With --baseline each is compared under the look gate's limits (test/look/compare.ts): the distance in " +
+      "OKLab × 100 between the frames' mean colours (limit 0.05), the largest between a 16 × 16 grid's regions " +
+      "(0.5), the 99th percentile over 2 × 2 blocks (2), and the relative change in fine detail of an 8 × 8 grid's " +
+      "regions (0.15).",
   );
   lines.push("");
   lines.push(
@@ -521,7 +523,16 @@ function references(r: Results, baseline: Results | null, lines: string[]): void
         "deterministic",
         ...(baseline === null
           ? []
-          : ["parity", "within 1/255", "max diff", "GPU p50 Δ", "saturated Δ", "render CPU Δ"]),
+          : [
+              "look",
+              "frame",
+              "region",
+              "block p99",
+              "detail",
+              "GPU p50 Δ",
+              "saturated Δ",
+              "render CPU Δ",
+            ]),
       ],
       r.cases.map((c) => {
         const row = [
@@ -532,11 +543,13 @@ function references(r: Results, baseline: Results | null, lines: string[]): void
         ];
         if (baseline !== null) {
           const b = baseline.cases.find((x) => x.id === c.id);
-          const p = c.reference.parity;
+          const p = c.reference.look;
           row.push(
             p === null ? "no baseline frame" : p.pass ? "pass" : "FAIL",
-            p === null ? "—" : `${f(p.closePercent, 4)} %`,
-            p === null ? "—" : String(p.maxDiff),
+            p === null ? "—" : f(p.frame, 2),
+            p === null ? "—" : f(p.region, 2),
+            p === null ? "—" : f(p.block, 2),
+            p === null ? "—" : f(p.detail, 2),
             delta(c.paced.gpu?.p50, b?.paced.gpu?.p50),
             delta(c.saturated.msPerFrame, b?.saturated.msPerFrame),
             delta(c.paced.cpu.p50, b?.paced.cpu.p50),

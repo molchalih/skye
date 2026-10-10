@@ -3,36 +3,26 @@ import { hdrEncoding } from "../gl/target.ts";
 import { GpuTimer } from "../gl/timer.ts";
 import type { PassFrame } from "../passes/frame.ts";
 import { Pipeline } from "../passes/pipeline.ts";
+import type { CreateSkyOptions, Sky, SkyEvents, SkyeStats } from "./api.ts";
+import { antisolarPoint, sunInTexture } from "./celestial.ts";
 import { Easer } from "./easing.ts";
 import { Emitter } from "./emitter.ts";
-import { SceneModel, STATIC_TIME_S } from "./frame-state.ts";
+import { STATIC_TIME_S, type FrameTime } from "./frame-state.ts";
 import { computeLayout, createLayout, fpsCap, type LayoutInput } from "./layout.ts";
 import { Lightning } from "./lightning.ts";
-import { FrameLoop } from "./loop.ts";
-import type { CreateSkyOptions, Sky, SkyEvents, SkyeStats } from "./api.ts";
-import { resolveParams, type Quality, type ResolvedParams, type SkyeParams } from "./params.ts";
+import { FIRST_DT_S, FrameLoop, MAX_DT_S } from "./loop.ts";
+import { resolveParams, type ResolvedParams, type SkyeParams } from "./params.ts";
 import { QualityController } from "./quality.ts";
 import { createRandom, type RandomSource } from "./random.ts";
-import { FIXED_TIERS, TIERS, type TierDef } from "./tables.ts";
+import { SceneModel } from "./scene-model.ts";
+import { START_TIER, tierFor, TIERS, type TierDef } from "./tiers.ts";
+import { Wind } from "./wind.ts";
 
-const FIRST_DT = 1 / 60;
-const MAX_DT = 0.1;
 // Compile polls: every millisecond at first, which browsers stretch to 4 ms once five timers have chained, then once
 // a frame, so a slow or stalled compile does not wake the CPU hundreds of times a second.
 const POLL_MS = 1;
 const SLOW_POLL_MS = 16;
 const FAST_POLLS = 25;
-
-// An indexed loop rather than find() or for-of: this runs every frame and must allocate neither a callback nor an
-// iterator, which V8's mid tier keeps.
-function tierOf(quality: Quality, autoTier: number): TierDef {
-  if (quality === "auto") return TIERS[autoTier] ?? TIERS[1];
-  for (let i = 0; i < FIXED_TIERS.length; i++) {
-    const t = FIXED_TIERS[i];
-    if (t?.name === quality) return t;
-  }
-  return TIERS[1];
-}
 
 /** Every GPU object a sky owns. A restored context gets a new set; the old one died with the lost context. */
 class Resources {
@@ -62,13 +52,18 @@ class SkyRenderer implements Sky {
   readonly #model = new SceneModel();
   readonly #easer = new Easer();
   readonly #lightning = new Lightning();
+  readonly #wind = new Wind();
   readonly #quality = new QualityController();
   readonly #layout = createLayout();
   readonly #layoutInput: LayoutInput;
   readonly #frame: PassFrame;
   readonly #loop: FrameLoop;
+  /** The time of frames drawn by `render`; the loop keeps its own. */
+  readonly #renderTime: FrameTime = { seconds: 0, dt: FIRST_DT_S, isStatic: false };
   #input: Partial<SkyeParams>;
   #params: ResolvedParams;
+  /** The tier frames draw with: the fixed `quality`, or the auto controller's pick. */
+  #tier: TierDef;
   #cssWidth: number;
   #cssHeight: number;
   #lastT = 0;
@@ -111,25 +106,28 @@ class SkyRenderer implements Sky {
     this.#cssWidth = canvas.width;
     this.#cssHeight = canvas.height;
     this.#res = new Resources(gl);
-    const tier = tierOf(this.#params.quality, this.#quality.tier);
+    this.#tier = tierFor(this.#params.quality, this.#quality.tier);
+    this.#model.configure(this.#params, this.#aspect());
     this.#layoutInput = {
       cssWidth: 0,
       cssHeight: 0,
       devicePixelRatio: 1,
-      tier,
-      blurEased: 0,
+      tier: this.#tier,
+      blur: 0,
       blurTarget: 0,
     };
     this.#frame = {
-      time: 0,
-      windT: 0,
-      windNow: 0,
-      flash: 0,
-      enc: hdrEncoding(this.#res.gpu.float),
+      seconds: 0,
+      dt: FIRST_DT_S,
+      isStatic: false,
       state: this.#easer.current,
+      sunUV: [0, 0],
+      antiSun: [0, 0],
+      wind: this.#wind,
+      lightning: this.#lightning,
+      encoding: hdrEncoding(this.#res.gpu.float),
       layout: this.#layout,
-      tier,
-      bolt: this.#lightning,
+      tier: this.#tier,
       pixels: 0,
       passes: 0,
     };
@@ -137,8 +135,8 @@ class SkyRenderer implements Sky {
       canDraw: () => this.#canDraw(),
       isStatic: () => this.#isStatic(),
       fpsCap: () => this.#fpsCap(),
-      draw: (t, dt) => this.#draw(t, dt),
-      paced: (dtMs, cap) => this.#adaptTier(dtMs, cap),
+      draw: (time) => this.#draw(time),
+      paced: (time, cap) => this.#adaptTier(time, cap),
     });
     const target: EventTarget = canvas;
     target.addEventListener("webglcontextlost", this.#onLost);
@@ -153,8 +151,9 @@ class SkyRenderer implements Sky {
     this.#params = resolveParams(this.#input);
     // The GPU-time average measured another tier: kept, it would make "auto" judge its tier on that cost.
     if (this.#params.quality !== quality) this.#res.timer.reset();
-    // What v6's attributeChangedCallback does: drop the cached target and restart the frame interval.
-    this.#model.invalidate();
+    this.#tier = tierFor(this.#params.quality, this.#quality.tier);
+    this.#model.configure(this.#params, this.#aspect());
+    // A change starts the frame interval afresh: the next frame advances by a nominal one, as a new sky's first does.
     this.#hasLastT = false;
     this.#loop.restart();
     this.#kick();
@@ -166,8 +165,8 @@ class SkyRenderer implements Sky {
     this.#cssHeight = Number.isFinite(cssHeight) && cssHeight > 0 ? cssHeight : 0;
     this.#layoutInput.devicePixelRatio =
       Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1;
-    // v6's ResizeObserver drops the cached target but, unlike an attribute change, keeps the frame interval running.
-    this.#model.invalidate();
+    // Unlike a change of params, a resize keeps the frame interval running.
+    this.#model.configure(this.#params, this.#aspect());
     this.#kick();
   }
 
@@ -177,14 +176,16 @@ class SkyRenderer implements Sky {
       this.#throwUnheard();
       return;
     }
-    // Like v6: 1/60 for static frames and the first frame after an update, then the interval capped at 0.1 s;
-    // v6's renderFrame also reads a zero interval as 1/60, and a backward step is treated the same.
+    // A repeated or backward time advances by a nominal frame, like the first: animation time never runs back.
     const step = t - this.#lastT;
-    const dt =
-      this.#isStatic() || !this.#hasLastT || !(step > 0) ? FIRST_DT : Math.min(MAX_DT, step);
+    const time = this.#renderTime;
+    time.seconds = t;
+    time.isStatic = this.#isStatic();
+    if (time.isStatic || !this.#hasLastT || !(step > 0)) time.dt = FIRST_DT_S;
+    else time.dt = Math.min(MAX_DT_S, step);
     this.#lastT = t;
     this.#hasLastT = true;
-    this.#draw(t, dt);
+    this.#draw(time);
   }
 
   start(): void {
@@ -212,11 +213,10 @@ class SkyRenderer implements Sky {
   }
 
   stats(): SkyeStats {
-    const tier = tierOf(this.#params.quality, this.#quality.tier);
     const l = this.#layout;
     return {
       renderer: "skye",
-      quality: tier.name,
+      quality: this.#tier.name,
       auto: this.#params.quality === "auto",
       tier: this.#quality.tier,
       gpuMs: this.#res.timer.ms,
@@ -264,7 +264,12 @@ class SkyRenderer implements Sky {
   }
 
   #fpsCap(): number {
-    return fpsCap(tierOf(this.#params.quality, this.#quality.tier).fps, this.#layout);
+    return fpsCap(this.#tier, this.#layout);
+  }
+
+  // Guarded against a zero height; a zero width gives 0, which places every body on the centre line.
+  #aspect(): number {
+    return this.#cssWidth / Math.max(1, this.#cssHeight);
   }
 
   #canDraw(): boolean {
@@ -276,61 +281,56 @@ class SkyRenderer implements Sky {
     if (this.#canDraw()) this.#loop.wake();
   }
 
-  // One frame at animation time `t`, advanced by `dt`; `render` and the loop each keep their own interval.
-  #draw(t: number, dt: number): void {
-    const params = this.#params;
-    const isStatic = this.#isStatic();
-    const time = isStatic ? STATIC_TIME_S : t;
-    const tier = tierOf(params.quality, this.#quality.tier);
-    const aspect = this.#cssWidth / Math.max(1, this.#cssHeight);
-    if (isStatic) this.#easer.reset();
-    const state = this.#easer.step(
-      this.#model.target(params, time, aspect, isStatic),
-      dt,
-      isStatic,
-    );
+  // One frame. `render` and the loop each keep their own frame time; a static frame always shows STATIC_TIME_S.
+  // The frame object carries every number from here on: a number passed to a call V8 does not inline is boxed, and
+  // so is one that a conditional expression merges with a constant, so each case stores its own.
+  #draw(time: Readonly<FrameTime>): void {
+    const f = this.#frame;
+    f.isStatic = time.isStatic;
+    if (time.isStatic) f.seconds = STATIC_TIME_S;
+    else f.seconds = time.seconds;
+    f.dt = time.dt;
+    const state = this.#easer.step(this.#model.target(f), f);
 
-    const li = this.#layoutInput;
-    li.cssWidth = this.#cssWidth;
-    li.cssHeight = this.#cssHeight;
-    li.tier = tier;
-    li.blurEased = state.blur;
-    li.blurTarget = params.blur;
-    const l = computeLayout(li, this.#layout.detailScale, this.#layout);
-    if (this.#canvas.width !== l.canvasWidth || this.#canvas.height !== l.canvasHeight) {
-      this.#canvas.width = l.canvasWidth;
-      this.#canvas.height = l.canvasHeight;
+    const input = this.#layoutInput;
+    input.cssWidth = this.#cssWidth;
+    input.cssHeight = this.#cssHeight;
+    input.tier = this.#tier;
+    input.blur = state.blur;
+    input.blurTarget = this.#params.blur;
+    const layout = computeLayout(input, this.#layout);
+    if (this.#canvas.width !== layout.canvasWidth || this.#canvas.height !== layout.canvasHeight) {
+      this.#canvas.width = layout.canvasWidth;
+      this.#canvas.height = layout.canvasHeight;
     }
     const { gpu, pipeline, timer } = this.#res;
-    pipeline.allocate(l);
+    pipeline.allocate(layout);
     // After allocating, which binds textures behind the bind cache.
     gpu.beginFrame();
 
-    const f = this.#frame;
-    f.flash = this.#lightning.step(time, state, this.#random);
-    const gust =
-      1 + 0.25 * (Math.sin(time * 0.31) + 0.6 * Math.sin(time * 0.83 + 1.7)) * state.gust;
-    f.windNow = state.wind * gust;
-    f.windT += f.windNow * dt;
-    f.time = time;
-    f.tier = tier;
+    this.#lightning.step(f, state, this.#random);
+    this.#wind.blow(f, state);
+    sunInTexture(f.sunUV, state);
+    antisolarPoint(f.antiSun, state.sun.position);
+    f.tier = this.#tier;
     f.pixels = 0;
     f.passes = 0;
-    const timed = (this.#probing ?? params.quality === "auto") && timer.begin();
+    const timed = (this.#probing ?? this.#params.quality === "auto") && timer.begin();
     pipeline.draw(f);
     if (timed) timer.end();
     timer.poll();
     this.#drawn = true;
   }
 
-  // v6 steps the auto tier after each loop frame, from the frame interval and the smoothed GPU time.
-  #adaptTier(dtMs: number, cap: number): void {
+  // After each loop frame, the auto controller judges the tier by the frame interval and the smoothed GPU time.
+  #adaptTier(time: Readonly<FrameTime>, cap: number): void {
     if (this.#params.quality !== "auto") return;
     const timer = this.#res.timer;
-    const change = this.#quality.observe(dtMs, cap, timer.ms);
+    const change = this.#quality.observe(time, cap, timer);
     if (change.resetGpu) timer.reset();
     if (change.changed) {
-      const tier = TIERS[change.tier] ?? TIERS[1];
+      const tier = TIERS[change.tier] ?? TIERS[START_TIER];
+      this.#tier = tier;
       this.#events.emit("tierchange", { quality: tier.name, tier: change.tier });
     }
   }
@@ -408,19 +408,18 @@ class SkyRenderer implements Sky {
     this.#events.emit("contextlost", undefined);
   };
 
-  // What v6's restore handler does through _init: new programs, buffers and targets, and fresh buffer sizes.
-  // Like v6, the detail scale (_dsc) and the GPU-time average (_gpuMs) survive; only pending queries are dropped.
+  // A restored context needs new programs, buffers and targets, sized afresh. The GPU-time average and the detail
+  // scale carry over: they describe the display and the blur, not the context. Only pending queries are dropped.
   readonly #onRestored = (): void => {
     if (this.#disposed || this.#error !== undefined) return;
     this.#lost = false;
     const gpuMs = this.#res.timer.ms;
     this.#res = new Resources(this.#gl);
     this.#res.timer.ms = gpuMs;
-    this.#frame.enc = hdrEncoding(this.#res.gpu.float);
+    this.#frame.encoding = hdrEncoding(this.#res.gpu.float);
     const detailScale = this.#layout.detailScale;
     Object.assign(this.#layout, createLayout());
     this.#layout.detailScale = detailScale;
-    this.#model.invalidate();
     this.#polls = 0;
     this.#pollTimer = setTimeout(this.#poll, POLL_MS);
   };

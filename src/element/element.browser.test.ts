@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { compare, describeComparison } from "../../test/parity/compare.ts";
-import { whenReady } from "../../test/parity/harness.ts";
-import { amendV6 } from "../../test/parity/image-edits.ts";
+import { expectApprovedLook } from "../../test/look/expect.ts";
+import { PageSky, whenReady } from "../../test/look/harness.ts";
 import { Display } from "../../test/support/display.ts";
 import {
   canvasOf,
@@ -122,10 +121,9 @@ describe("attributes", () => {
     sky.dispose();
     gl.getExtension("WEBGL_lose_context")?.loseContext();
 
+    // The same renderer behind both, so every channel is the same.
     expect(fromElement.length).toBe(fromSky.length);
-    expect(describeComparison(compare(fromSky, fromElement, 1, fromSky.length / 4))).toMatch(
-      /^identical/,
-    );
+    expect(fromElement.filter((v, i) => v !== fromSky[i]).length, "channels that differ").toBe(0);
   });
 
   it("forwards changes, and a removed attribute returns its param to the default", async () => {
@@ -145,6 +143,8 @@ describe("attributes", () => {
     const { el } = mount({ motion: "static" });
     await nextEvent(el, SKYE_READY);
     await wait(50);
+    // The static frame and its repeat.
+    display.tick();
     display.tick();
     const mipmaps = vi.spyOn(glOf(el), "generateMipmap");
     el.setAttribute("dim", "0.3");
@@ -157,53 +157,32 @@ describe("attributes", () => {
   });
 });
 
-describe("parity with the v6 element", () => {
-  it("matches v6 for a static scene given only the time inputs v6 reads from the clock", async () => {
-    await import("../../test/reference/weather-sky-v6.js");
+describe("the approved look", () => {
+  it("is kept by the element for a static scene given only the time inputs a page reads from its clock", async () => {
     const display = new Display().install();
-
-    const v6Box = document.createElement("div");
-    v6Box.style.cssText = "position:relative;width:160px;height:100px";
-    const v6 = document.createElement("weather-sky-v6");
-    // Frames are drawn by hand below; v6's own loop would add more.
-    Reflect.set(v6, "_loop", () => undefined);
-    for (const [name, value] of Object.entries({
+    const params: SkyeParams = {
       scene: "rainy",
-      hour: "7.5",
-      day: "200",
-      moon: "0.3",
+      hour: 7.5,
+      dayOfYear: 200,
+      moonPhase: 0.3,
       motion: "static",
-    }))
-      v6.setAttribute(name, value);
-    v6Box.append(v6);
-    document.body.append(v6Box);
-    track(v6Box);
-
-    const { el } = mount({
-      scene: "rainy",
-      hour: "7.5",
-      "day-of-year": "200",
-      "moon-phase": "0.3",
-      motion: "static",
-    });
+    };
+    const { el } = mount(toAttributes(params));
     await nextEvent(el, SKYE_READY);
-    await until(() => Reflect.get(v6, "_glass") && Reflect.get(v6, "_blur"), "v6 programs");
-    amendV6(v6);
     await wait(50);
-
     display.tick();
-    const skye = readPixels(glOf(el));
-    Reflect.set(v6, "_cur", null);
-    Reflect.apply(Reflect.get(v6, "renderFrame"), v6, [1 / 60]);
-    const v6Gl: unknown = Reflect.get(v6, "_gl");
-    if (!(v6Gl instanceof WebGL2RenderingContext)) throw new Error("no v6 context");
-    const reference = readPixels(v6Gl);
-    v6Box.remove();
-    v6Gl.getExtension("WEBGL_lose_context")?.loseContext();
-
-    expect(skye.length).toBe(160 * 100 * devicePixelRatio ** 2 * 4);
-    const result = compare(reference, skye, 160, skye.length / 4 / 160);
-    expect(result.pass, describeComparison(result)).toBe(true);
+    const gl = glOf(el);
+    const skye = {
+      width: gl.drawingBufferWidth,
+      height: gl.drawingBufferHeight,
+      pixels: readPixels(gl),
+    };
+    const approved = await PageSky.approved(params, 160, 100, devicePixelRatio);
+    try {
+      expectApprovedLook(skye, approved.frame(0), "rainy at 7.5");
+    } finally {
+      approved.dispose();
+    }
   });
 });
 
@@ -382,6 +361,23 @@ describe("fallback", () => {
     await nextEvent(el, SKYE_READY);
     await until(() => cover.hidden === true, "the gradient to hide");
     expect(el.getAttribute("style")).toBeNull();
+  });
+
+  // A compositor that presents a canvas one frame late shows the first frame only with the second: the gradient stays
+  // until then, so it never uncovers a blank canvas.
+  it("hides the gradient in the frame after the sky's first", async () => {
+    const display = new Display().install();
+    const { el } = mount({ motion: "static" });
+    await nextEvent(el, SKYE_READY);
+    await wait(50);
+    const mipmaps = vi.spyOn(glOf(el), "generateMipmap");
+    display.tick();
+    expect(mipmaps).toHaveBeenCalledTimes(1);
+    expect(coverOf(el).hidden).toBe(false);
+    display.tick();
+    expect(mipmaps).toHaveBeenCalledTimes(2);
+    expect(coverOf(el).hidden).toBe(true);
+    expect(display.pending).toBe(0);
   });
 
   it("keeps the gradient and emits skye-fallback without WebGL2", async () => {
@@ -612,21 +608,24 @@ describe("environment", () => {
     await nextEvent(el, SKYE_READY);
     await wait(50);
     const mipmaps = vi.spyOn(glOf(el), "generateMipmap");
+    // Two frames: the gradient goes after the second.
     display.tick();
-    expect(mipmaps).toHaveBeenCalledTimes(1);
+    display.tick();
+    expect(mipmaps).toHaveBeenCalledTimes(2);
+    expect(coverOf(el).hidden).toBe(true);
 
     Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
     cleanups.push(() => Reflect.deleteProperty(document, "hidden"));
     document.dispatchEvent(new Event("visibilitychange"));
     expect(display.pending).toBe(0);
     display.tick();
-    expect(mipmaps).toHaveBeenCalledTimes(1);
+    expect(mipmaps).toHaveBeenCalledTimes(2);
 
     Reflect.deleteProperty(document, "hidden");
     document.dispatchEvent(new Event("visibilitychange"));
     display.tick();
     display.tick();
-    expect(mipmaps).toHaveBeenCalledTimes(3);
+    expect(mipmaps).toHaveBeenCalledTimes(4);
   });
 
   it("forwards reduced-motion changes", async () => {

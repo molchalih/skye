@@ -11,6 +11,10 @@ bunx playwright install webkit chromium firefox
 
 The tests run in real browsers through Playwright, so all three engines must be installed.
 
+On Linux, headless Firefox gets a WebGL context only when an X display is present; without one, every Firefox test that draws fails. Run the browser checks under Xvfb, as CI does: `xvfb-run --auto-servernum bun run check:browsers`. Firefox stays headless and draws through Mesa's llvmpipe; macOS needs nothing extra.
+
+On Linux, Playwright's WebKit gives no WebGL2 context to an `OffscreenCanvas` in a worker, so it skips 76 worker cases by design (12 tests that need a worker sky and 64 worker look cases); its worker elements are tested on the main-thread fallback instead.
+
 ## Checks
 
 `bun run check` is the gate. It runs `check:static`, then `check:browsers`, each step in this order:
@@ -24,8 +28,8 @@ The tests run in real browsers through Playwright, so all three engines must be 
 | `build`          | shader generation (unused functions dropped, short GLSL names and float literals, a uniform table per program), tsdown (minified, with source maps, each entry importing every chunk it needs), and the custom elements manifest |
 | `check:package`  | publint (strict) and Are the Types Wrong? (ESM-only profile)                                                                                                                                                                     |
 | `size`           | each entry against its limit in `.size-limit.json`                                                                                                                                                                               |
-| `test:browser`   | browser tests in WebKit, Chromium and Firefox, then the worker tests; includes the pixel parity gate                                                                                                                             |
-| `test:consumers` | the packed package from plain HTML with an import map, from a Vite app, from type-checked consumers, and beside v6                                                                                                               |
+| `test:browser`   | browser tests in WebKit, Chromium and Firefox, then the worker tests, then the look gate                                                                                                                                         |
+| `test:consumers` | the packed package from plain HTML with an import map, from a Vite app, from type-checked consumers, and beside the approved build                                                                                               |
 
 While you work, run the part you need: `bun run test:unit`, `bun run test:browser`, `bun run test:consumers`.
 
@@ -73,17 +77,44 @@ Some measurements need root or Xcode, and the bench does not take them:
 - **GPU and CPU power in watts:** `sudo powermetrics --samplers gpu_power,cpu_power -i 500` during a run.
 - **A Metal System Trace:** `xcrun xctrace record --template 'Metal System Trace' --attach <GPU process pid>`. It needs a full Xcode install.
 
-`--baseline <dir>` compares a run with an earlier one. Each reference frame is checked under the parity gate's tolerance (at least 99.9 % of channels within 1/255, and none beyond 4/255), and the report gives the change in GPU and CPU time.
+`--baseline <dir>` compares a run with an earlier one. Each reference frame is checked under the look gate's limits against the approved build ([Look preservation](#look-preservation)), and the report gives the change in GPU and CPU time.
 
-## Pixel parity
+## Look preservation
 
-skye draws exactly what the renderer it replaces (v6) draws, apart from the changes to the image the owner has approved. v6's source is kept unchanged in `test/reference/weather-sky-v6.js`, and the parity gate renders both side by side. Before it compares, the gate gives v6 the approved changes: `test/parity/image-edits.ts` lists each as an edit to v6's shader text, which the harness applies to v6's own programs, along with any data they read. Every pixel is still held to v6 as amended.
+skye must keep its look: the same sky, colours, light, motion and character. Its pixels may change; what a person sees may not, unless the owner approves it. The look gate in `test/look/` holds every change to that, in WebKit, Chromium and Firefox. Its references draw beside skye in the same page, on the same GPU, at the same size and pixel ratio, with the same params, animation times and random sequence:
 
-- **When a parity case fails, fix the divergence in skye.** Never edit the reference file and never loosen the tolerance.
-- **A change that could alter pixels does not go into code.** Propose it in an issue with its measured gain and parity diff. It is applied only after the owner approves that item. This covers fewer particles, fewer ray taps, lower precision, skipped mipmaps, lower octave caps and any shader change beyond stripping comments and whitespace, dropping functions nothing calls and shortening names.
-- **An approved change to the image goes into `test/parity/image-edits.ts` with the code,** so the gate amends v6 the same way; any data it reads, such as the noise lattice, gets a test that pins it. `scripts/shaders.test.ts` applies these edits to v6's text before its own list of exact edits, which change no value; compiler rounding may move a channel by 1/255. Approved so far: the sky's clouds, mist and Milky Way, and the glass's frost, read value noise from a texture of hash12's lattice (`src/gl/noise.ts`, sampled by `tnoise` in `src/shaders/lattice.glsl`) instead of hashing in each pixel; the glass binds it to texture unit 2. The file also gives v6 one row its tier table lacks, the opt-in `eco` tier (`V6_ECO_TIER`), so the gate holds `quality: "eco"` to v6's own sizing and drawing with eco's numbers; it edits no shader.
+- **The approved build**, `test/reference/skye-approved.js`: skye's core bundled from the tree whose look the owner last approved. Every case is held to it, tightly: the static matrix (every scene at night, dawn, noon and dusk, in two boxes), animation, lightning, scene changes, resizes, blur fades, every tier, focus and exposure limits, wind, pixel ratios, the RGBA8 fallback, the worker, the element, and the published build (`test:consumers`).
+- **The frozen baseline**, `test/reference/skye-baseline-2026-10.js`: the approved build as of 2026-10-10, which never changes (`test/reference/reference.test.ts` pins its bytes). The static matrix is held to it, more loosely, so that approvals one after another cannot drift far from it.
+
+v6 (`test/reference/weather-sky-v6.js`, unchanged) is no longer compared image to image: its clouds, mist and frost sit elsewhere than skye's, which read a noise texture, so it could only be held to loose limits that let a sky 10 % brighter, stars off or rays off through. It stays the reference for the frame state, lightning, layout, blur kernel and solar math (`src/core/*.browser.test.ts`, `src/core/blur-kernel.test.ts`, `src/astro/`), compared to float32 precision (4 ulp) with pixel sizes, flags and strike times exact; the easing is held to its own behaviour (`src/core/easing.test.ts`), and it times the storm cases to its lightning schedule.
+
+Colours are compared in OKLab, scaled by 100 (lightness 0 to 100; a just-noticeable difference is about 2), from means only, never single pixels:
+
+| Measure                                                                             | Approved | Baseline | Catches                                                    |
+| ----------------------------------------------------------------------------------- | -------- | -------- | ---------------------------------------------------------- |
+| mean colour of the whole frame                                                      | 0.05     | 0.15     | brightness, hue, exposure, tone mapping, however slight    |
+| mean colour of each region of a 16 × 16 grid                                        | 0.5      | 0.6      | what moves or vanishes in one place: sun, stars, rays, fog |
+| 99th percentile over the frame's 2 × 2 blocks                                       | 2        | 3        | a change of structure: the drops, a pattern, a flip        |
+| detail: mean lightness gradient of each region of an 8 × 8 grid, change ÷ (max + ¼) | 0.15     | 0.2      | a blur, a lower resolution, fewer bits                     |
+
+How the limits were set, over the static matrix in all three engines (192 frames): every float uniform jittered by 1e-4 of its value, far more than any reordering of float32 arithmetic, reaches at most 0.01, 0.28, 0.93 and 0.08, under half of each limit. The approved limits catch, in the cases where each shows: a sky 3 % brighter (frame 0.11 to 0.53), exposure × 1.05, a 3 % hue turn, the sun 3 px higher, cloud cover + 0.05, fog, stars, frost, rain, refraction or rays off, a missing pass, another tone mapping or tier, a flip, wind × 2, a frozen clock, 2 × 2 pixelation on or off the blocks and a 3 × 3 blur. 6-bit output is caught only where the sky has a smooth gradient (93 of 192 frames against the approved build, 30 against the baseline); elsewhere 6 bits change too little to measure. A shift of one 8-bit step over the whole frame fails, since a sky 3 % brighter is about that much. The baseline limits sit 1.2 to 3 times higher and still stop a sky 10 % brighter, stars off, rays off and cover + 0.05; stars off only just (region 0.70 against 0.6, 1.16 ×). `test/look/gate.browser.test.ts` runs a case of each regression (`test/look/mutations.ts`) and of the noise in every engine on every run, and `test/look/compare.test.ts` the measures themselves.
+
+The gate compares exact cloud, star and grain patterns, so the hash functions and the noise lattice must stay as they are unless a change to the look is approved.
+
+- **Any change that keeps the gate passing needs no approval of its look:** a refactor, a reordering of arithmetic, a rewrite of a shader or of the frame math.
+- **A change that fails the gate is a bug, unless it is meant to change the image.** Then it needs the owner's eye. Propose it in an issue with its measured gain, the gate's figures (a failure prints every measure and the worst region) and screenshots of skye and the approved build side by side. Examples: fewer particles, fewer ray taps, lower precision, fewer octaves, another noise.
+- **Once the owner approves it,** run `bun run look:approve`, which bundles the working tree into `test/reference/skye-approved.js` and its declarations, and commit both in the commit that makes the change. CI checks that every commit changing them holds exactly its own source, bundled (`scripts/check-approved.ts`), and `.github/CODEOWNERS` puts `test/reference/` under the owner's review.
+- **A deliberate change to the look usually needs a new baseline too,** since the baseline limits are only 1.2 to 3 times the approved ones. That is a separate step, by the owner's decision: copy `test/reference/skye-approved.js` and `.d.ts` to `skye-baseline-<yyyy-mm>.*`, point `PageSky.baseline` (`test/look/harness.ts`) at them, pin their SHA-256 in `test/reference/reference.test.ts`, and delete the old pair.
+- **`scripts/check-approved.ts` survives a force-push:** when its base is gone it checks the approval in force (HEAD's last commit to change the approved build), and when the base still exists off HEAD's history it checks every commit since the two parted; its log names the range. It can still fail falsely when a dependency bump follows a checked approval commit (the approval is rebuilt with HEAD's dependencies); squashing the approval with the bump, or approving again after it, fixes that.
+- **`.github/CODEOWNERS` blocks a merge only** if branch protection on `main` requires a code owner's review; the owner sets that once.
+- **Never edit a reference by hand, and never raise a limit to make a case pass.**
+
+To run the gate alone: `bunx vitest run --project browser --project browser-worker --project browser-look test/look`. To add a case, use `LookPair` from `test/look/harness.ts` and `expectLook` from `test/look/expect.ts`, and add only cases that reach a code path no existing case reaches: each adds time to every run in three browsers.
+
+## Code rules
+
 - **No default may read the clock or the calendar.** Callers pass time and date.
-- **Per-frame code allocates nothing.**
+- **Per-frame code allocates nothing.** No number passes to or returns from a call in the frame path, a value merged with a constant by a conditional expression is stored by a branch instead, and no built-in that allocates (`Array.prototype.fill`, an iterator) runs per frame: V8 boxes each such number, and its optimising tier inlines a call only within a budget. `src/core/allocation.browser.test.ts` holds frames under a byte each in Chromium. Until V8 has optimised the frame path the engine itself allocates, for roughly the first 25 s of animation and briefly again around 5 to 6 min, as it recompiles; that is the engine, not the code. The test warms up for 60,000 frames and takes the least of three sampled windows, so neither shows in it.
 
 ## Commits
 

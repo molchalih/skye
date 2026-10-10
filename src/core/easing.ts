@@ -1,148 +1,127 @@
-import { createFrameState, type FrameState, type Vec2 } from "./frame-state.ts";
-import { mix, smoothstep, type Vec3 } from "./math.ts";
-import { BLUR_DURATION_S } from "./tables.ts";
+import { createFrameState, type Body, type FrameState, type FrameTime } from "./frame-state.ts";
+import { mix, smoothstep } from "./math.ts";
 
-// Time constant of the exponential chase, in seconds.
+/** Time constant of the chase: a value covers 63 % of the way to its target in this many seconds. */
 const CHASE_TAU_S = 0.7;
-// Scalars this close to their target land on it exactly.
-const SNAP = 1e-4;
+/**
+ * How long the background blur takes to reach a new radius. It runs for a
+ * fixed time and lands exactly, unlike the chase, because a blur that has
+ * settled shrinks the canvas (`computeLayout`).
+ */
+export const BLUR_FADE_S = 0.62;
 
 /**
- * Eases the displayed frame state toward the target, in place, as v6's `_ease`:
- * an exponential chase for everything except blur, which runs a fixed-duration
- * smoothstep tween so it is independent of frame rate and lands exactly.
+ * Where `current` is once `remaining` of its distance to `target` is left;
+ * 0 lands on the target. There is no snap. A chase across a whole unit comes
+ * within float32's precision of a non-zero target in about 12 s, and the
+ * uniform it feeds stops changing; a chase toward 0 only shrinks, through
+ * float32's smallest values for about 73 s, and in float64 never reaches 0
+ * (it stalls near 1e-322). So gate an eased value by a threshold, never by
+ * `> 0`. Kept under V8's 30 bytes of bytecode for small functions, which it
+ * inlines at every call whatever else the caller has inlined, so no number is
+ * boxed.
+ */
+function approach(current: number, target: number, remaining: number): number {
+  return target + (current - target) * remaining;
+}
+
+/**
+ * Eases a displayed frame state toward the targets the scene model gives it:
+ * every value chases its target exponentially, which is frame-rate
+ * independent, while the blur runs a fixed-length smoothstep. The first step,
+ * and every static one, lands on the target.
  */
 export class Easer {
-  readonly #state = createFrameState();
-  #ready = false;
+  /** The eased state; the same object on every step. */
+  readonly current: FrameState = createFrameState();
+  #started = false;
+  // The fraction of each value's distance to its target left after this step. A field rather than an argument:
+  // a number passed to a call V8 does not inline is boxed.
+  #remaining = 0;
   #blurFrom = 0;
   #blurTo = 0;
-  #blurT = 1;
+  #blurProgress = 1;
 
-  /** The eased state; the same object on every call. */
-  get current(): FrameState {
-    return this.#state;
-  }
-
-  /** Makes the next step start from the target again (first-frame behaviour). */
-  reset(): void {
-    this.#ready = false;
-  }
-
-  /**
-   * Advances the eased state by `dt` seconds and returns it. The first step, and
-   * every step in static mode, copies the target instead.
-   */
-  step(target: Readonly<FrameState>, dt: number, isStatic: boolean): FrameState {
-    const cur = this.#state;
-    if (!this.#ready || isStatic) {
-      chaseFrameState(cur, target, 1);
-      cur.blur = target.blur;
-      this.#ready = true;
-      this.#blurFrom = this.#blurTo = cur.blur;
-      this.#blurT = 1;
-      return cur;
-    }
-    chaseFrameState(cur, target, 1 - Math.exp(-dt / CHASE_TAU_S));
-    if (this.#blurTo !== target.blur) {
-      this.#blurFrom = cur.blur;
-      this.#blurTo = target.blur;
-      this.#blurT = 0;
-    }
-    if (this.#blurT < 1) this.#blurT = Math.min(1, this.#blurT + dt / BLUR_DURATION_S);
-    cur.blur =
-      this.#blurT >= 1
-        ? this.#blurTo
-        : mix(this.#blurFrom, this.#blurTo, smoothstep(0, 1, this.#blurT));
+  /** Advances the eased state by `time.dt` toward `target`, and returns it. */
+  step(target: Readonly<FrameState>, time: Readonly<FrameTime>): FrameState {
+    const jump = !this.#started || time.isStatic;
+    this.#started = true;
+    if (jump) this.#remaining = 0;
+    else this.#remaining = Math.exp(-time.dt / CHASE_TAU_S);
+    const cur = this.current;
+    this.#easeScalars(cur, target);
+    this.#easeBody(cur.sun, target.sun);
+    this.#easeBody(cur.moon, target.moon);
+    this.#easeVector(cur.sun.tint, target.sun.tint);
+    this.#easeVector(cur.light.position, target.light.position);
+    this.#easeVector(cur.light.color, target.light.color);
+    this.#easeVector(cur.zenith, target.zenith);
+    this.#easeVector(cur.horizon, target.horizon);
+    cur.moon.phase = approach(cur.moon.phase, target.moon.phase, this.#remaining);
+    cur.sun.sinElevation = approach(cur.sun.sinElevation, target.sun.sinElevation, this.#remaining);
+    if (jump) this.#jumpBlur(target);
+    else this.#tweenBlur(target, time);
     return cur;
   }
-}
 
-// Moves `c` the fraction `a` of the way to `v`; at 1 it lands on `v` exactly, which is how a step copies the target.
-function chase(c: number, v: number, a: number): number {
-  if (a >= 1) return v;
-  const x = c + (v - c) * a;
-  return Math.abs(x - v) < SNAP ? v : x;
-}
+  #easeScalars(cur: FrameState, to: Readonly<FrameState>): void {
+    const r = this.#remaining;
+    cur.aspect = approach(cur.aspect, to.aspect, r);
+    cur.exposure = approach(cur.exposure, to.exposure, r);
+    cur.focus = approach(cur.focus, to.focus, r);
+    cur.seed = approach(cur.seed, to.seed, r);
+    cur.night = approach(cur.night, to.night, r);
+    cur.sceneExposure = approach(cur.sceneExposure, to.sceneExposure, r);
+    cur.cover = approach(cur.cover, to.cover, r);
+    cur.intensity = approach(cur.intensity, to.intensity, r);
+    cur.cloudDarkness = approach(cur.cloudDarkness, to.cloudDarkness, r);
+    cur.wind = approach(cur.wind, to.wind, r);
+    cur.gustiness = approach(cur.gustiness, to.gustiness, r);
+    cur.rain = approach(cur.rain, to.rain, r);
+    cur.snow = approach(cur.snow, to.snow, r);
+    cur.sleet = approach(cur.sleet, to.sleet, r);
+    cur.storm = approach(cur.storm, to.storm, r);
+    cur.fog = approach(cur.fog, to.fog, r);
+    cur.haze = approach(cur.haze, to.haze, r);
+    cur.dust = approach(cur.dust, to.dust, r);
+    cur.rays = approach(cur.rays, to.rays, r);
+    cur.flare = approach(cur.flare, to.flare, r);
+    cur.rainbow = approach(cur.rainbow, to.rainbow, r);
+    cur.twilightBelt = approach(cur.twilightBelt, to.twilightBelt, r);
+    cur.stars = approach(cur.stars, to.stars, r);
+    cur.sunHidden = approach(cur.sunHidden, to.sunHidden, r);
+    cur.glassRain = approach(cur.glassRain, to.glassRain, r);
+    cur.glassFrost = approach(cur.glassFrost, to.glassFrost, r);
+    cur.glassMist = approach(cur.glassMist, to.glassMist, r);
+  }
 
-// Every value but blur moves the fraction `a` of the way to its target. Field by field, since a number read or
-// written under a computed key is boxed; and the scalars in groups of a dozen at most, since V8 inlines only about
-// that many `chase` calls into one function, and a call it leaves out boxes its result.
-function chaseFrameState(cur: FrameState, t: Readonly<FrameState>, a: number): void {
-  chaseParams(cur, t, a);
-  chaseSky(cur, t, a);
-  chaseWeather(cur, t, a);
-  chaseEffects(cur, t, a);
-  chaseVec2(cur.sunPos, t.sunPos, a);
-  chaseVec2(cur.moonPos, t.moonPos, a);
-  chaseVec2(cur.lightPos, t.lightPos, a);
-  chaseVec2(cur.antiSunPos, t.antiSunPos, a);
-  chaseVec2(cur.sunUV, t.sunUV, a);
-  chaseVec3(cur.zenith, t.zenith, a);
-  chaseVec3(cur.horizon, t.horizon, a);
-  chaseVec3(cur.sunColor, t.sunColor, a);
-  chaseVec3(cur.moonColor, t.moonColor, a);
-  chaseVec3(cur.lightColor, t.lightColor, a);
-  chaseVec3(cur.sunTint, t.sunTint, a);
-}
+  #easeBody(cur: Body, to: Readonly<Body>): void {
+    cur.visibility = approach(cur.visibility, to.visibility, this.#remaining);
+    this.#easeVector(cur.position, to.position);
+    this.#easeVector(cur.color, to.color);
+  }
 
-function chaseParams(cur: FrameState, t: Readonly<FrameState>, a: number): void {
-  cur.cover = chase(cur.cover, t.cover, a);
-  cur.intensity = chase(cur.intensity, t.intensity, a);
-  cur.seed = chase(cur.seed, t.seed, a);
-  cur.glass = chase(cur.glass, t.glass, a);
-  cur.focus = chase(cur.focus, t.focus, a);
-  cur.wind = chase(cur.wind, t.wind, a);
-  cur.exposure = chase(cur.exposure, t.exposure, a);
-  cur.aspect = chase(cur.aspect, t.aspect, a);
-}
+  #easeVector(cur: number[], to: readonly number[]): void {
+    const r = this.#remaining;
+    for (let i = 0; i < cur.length; i++) cur[i] = approach(cur[i] ?? 0, to[i] ?? 0, r);
+  }
 
-function chaseSky(cur: FrameState, t: Readonly<FrameState>, a: number): void {
-  cur.sinElevation = chase(cur.sinElevation, t.sinElevation, a);
-  cur.elevationDeg = chase(cur.elevationDeg, t.elevationDeg, a);
-  cur.sunrise = chase(cur.sunrise, t.sunrise, a);
-  cur.sunset = chase(cur.sunset, t.sunset, a);
-  cur.night = chase(cur.night, t.night, a);
-  cur.sunUp = chase(cur.sunUp, t.sunUp, a);
-  cur.moonUp = chase(cur.moonUp, t.moonUp, a);
-  cur.moonPhase = chase(cur.moonPhase, t.moonPhase, a);
-  cur.moonIllumination = chase(cur.moonIllumination, t.moonIllumination, a);
-  cur.weatherExposure = chase(cur.weatherExposure, t.weatherExposure, a);
-  cur.cloudDark = chase(cur.cloudDark, t.cloudDark, a);
-}
+  #jumpBlur(to: Readonly<FrameState>): void {
+    this.current.blur = this.#blurFrom = this.#blurTo = to.blur;
+    this.#blurProgress = 1;
+  }
 
-function chaseWeather(cur: FrameState, t: Readonly<FrameState>, a: number): void {
-  cur.rain = chase(cur.rain, t.rain, a);
-  cur.snow = chase(cur.snow, t.snow, a);
-  cur.fog = chase(cur.fog, t.fog, a);
-  cur.haze = chase(cur.haze, t.haze, a);
-  cur.dust = chase(cur.dust, t.dust, a);
-  cur.storm = chase(cur.storm, t.storm, a);
-  cur.sleet = chase(cur.sleet, t.sleet, a);
-  cur.gust = chase(cur.gust, t.gust, a);
-}
-
-function chaseEffects(cur: FrameState, t: Readonly<FrameState>, a: number): void {
-  cur.glassRain = chase(cur.glassRain, t.glassRain, a);
-  cur.glassFrost = chase(cur.glassFrost, t.glassFrost, a);
-  cur.glassMist = chase(cur.glassMist, t.glassMist, a);
-  cur.rays = chase(cur.rays, t.rays, a);
-  cur.flare = chase(cur.flare, t.flare, a);
-  cur.rainbow = chase(cur.rainbow, t.rainbow, a);
-  cur.belt = chase(cur.belt, t.belt, a);
-  cur.star = chase(cur.star, t.star, a);
-  cur.hide = chase(cur.hide, t.hide, a);
-}
-
-function chaseVec2(c: Vec2, v: Readonly<Vec2>, a: number): void {
-  const copy = a >= 1;
-  c[0] = copy ? v[0] : c[0] + (v[0] - c[0]) * a;
-  c[1] = copy ? v[1] : c[1] + (v[1] - c[1]) * a;
-}
-
-function chaseVec3(c: Vec3, v: Readonly<Vec3>, a: number): void {
-  const copy = a >= 1;
-  c[0] = copy ? v[0] : c[0] + (v[0] - c[0]) * a;
-  c[1] = copy ? v[1] : c[1] + (v[1] - c[1]) * a;
-  c[2] = copy ? v[2] : c[2] + (v[2] - c[2]) * a;
+  // A new target restarts the tween from wherever the blur is.
+  #tweenBlur(to: Readonly<FrameState>, time: Readonly<FrameTime>): void {
+    if (to.blur !== this.#blurTo) {
+      this.#blurFrom = this.current.blur;
+      this.#blurTo = to.blur;
+      this.#blurProgress = 0;
+    }
+    this.#blurProgress = Math.min(1, this.#blurProgress + time.dt / BLUR_FADE_S);
+    this.current.blur =
+      this.#blurProgress < 1
+        ? mix(this.#blurFrom, this.#blurTo, smoothstep(0, 1, this.#blurProgress))
+        : this.#blurTo;
+  }
 }

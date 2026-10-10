@@ -1,4 +1,4 @@
-// Pass 3: crepuscular ray gather at sky resolution; only runs while rays are active. Has its own hash12 and no shared noise.
+// The rays: crepuscular ray gather at sky resolution; only runs while rays are active. Has its own hash12 and no shared noise.
 #version 300 es
 precision highp float;
 uniform sampler2D uScene; uniform vec2 uSunUV, uRes; uniform float uEnc, uLod; uniform int uTaps;

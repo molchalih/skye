@@ -1,27 +1,29 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createSky, type SkyeParams } from "../../src/index.ts";
 import { BASE, CASES, SIZES } from "./cases.ts";
-import { compare, describeComparison } from "./compare.ts";
-import { ParityPair, whenReady } from "./harness.ts";
+import { expectLook } from "./expect.ts";
+import { LookPair, whenReady } from "./harness.ts";
 
-describe.each(SIZES)("static parity with v6 at %ix%i", (width, height) => {
-  let pair: ParityPair;
+// The one matrix also held to the frozen 2026-10 baseline, which keeps successive approvals from drifting far from it.
+describe.each(SIZES)(
+  "static look at %ix%i, against the approved build and the baseline",
+  (width, height) => {
+    let pair: LookPair;
 
-  beforeAll(async () => {
-    pair = await ParityPair.create(BASE, width, height);
-  });
+    beforeAll(async () => {
+      pair = await LookPair.create(BASE, width, height, { baseline: true });
+    });
 
-  afterAll(() => {
-    pair.dispose();
-  });
+    afterAll(() => {
+      pair.dispose();
+    });
 
-  it.each(CASES)("$scene at $name", ({ scene, hour }) => {
-    pair.update({ ...BASE, scene, hour });
-    const f = pair.frame(0);
-    const result = compare(f.v6, f.skye, f.width, f.height);
-    expect(result.pass, describeComparison(result)).toBe(true);
-  });
-});
+    it.each(CASES)("$scene at $name", ({ scene, name, hour }) => {
+      pair.update({ ...BASE, scene, hour });
+      expectLook(pair.frame(0), `${scene} at ${name}`);
+    });
+  },
+);
 
 function draw(canvas: HTMLCanvasElement): Uint8Array {
   const gl = canvas.getContext("webgl2");

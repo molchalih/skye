@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { SceneModel } from "../src/core/frame-state.ts";
-import { resolveParams, SCENE_NAMES } from "../src/index.ts";
+import type { FrameState } from "../src/core/frame-state.ts";
+import { SceneModel } from "../src/core/scene-model.ts";
+import { resolveParams, SCENE_NAMES, type ResolvedParams } from "../src/index.ts";
 import { coverRange, intensityRange, sceneWind, shown } from "./sky.ts";
+
+function drawn(params: ResolvedParams): Readonly<FrameState> {
+  const model = new SceneModel();
+  model.configure(params, 1.5);
+  return model.target({ seconds: 0, dt: 1 / 60, isStatic: false });
+}
 
 // The page shows cover and intensity as the renderer will draw them; these cases hold it to the scene model.
 describe("shown params", () => {
@@ -12,13 +19,13 @@ describe("shown params", () => {
     for (const cover of covers) {
       for (const intensity of intensities) {
         const params = resolveParams({ scene, cover, intensity });
-        const drawn = new SceneModel().target(params, 0, 1.5, false);
+        const state = drawn(params);
         expect(shown(params).cover, `cover ${cover}, intensity ${intensity}`).toBeCloseTo(
-          drawn.cover,
+          state.cover,
           9,
         );
-        const uses = drawn.rain + drawn.snow + drawn.fog + drawn.haze > 0;
-        if (uses) expect(shown(params).intensity).toBeCloseTo(drawn.intensity, 9);
+        const uses = state.rain + state.snow + state.fog + state.haze > 0;
+        if (uses) expect(shown(params).intensity).toBeCloseTo(state.intensity, 9);
       }
     }
   });
@@ -26,8 +33,7 @@ describe("shown params", () => {
   it.each(SCENE_NAMES)("give the renderer's own wind for %s", (scene) => {
     for (const intensity of intensities) {
       const params = resolveParams({ scene, intensity });
-      const drawn = new SceneModel().target(params, 0, 1.5, false);
-      expect(sceneWind(shown(params))).toBeCloseTo(drawn.wind, 9);
+      expect(sceneWind(shown(params))).toBeCloseTo(drawn(params).wind, 9);
     }
   });
 

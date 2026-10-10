@@ -9,7 +9,7 @@
 //             paced (GPU/CPU/frame-interval percentiles, GL calls, system counters), passes (one GPU query per
 //             pass), marginal (each pass repeated inside an unsplit frame), saturated (frames back to back),
 //             allocations (sampling heap profiler), trace (GC, thread busy time), reference (a PNG per case,
-//             compared with --baseline under the parity gate's tolerance).
+//             compared with --baseline under the look gate's limits).
 //   element   a real <skye-view> on the main thread and in a worker, its own loop running, in each state:
 //             visible, offscreen, hidden, static, reduced-motion.
 //
@@ -491,10 +491,10 @@ async function runMatrix(
           // oxlint-disable-next-line no-await-in-loop -- see above
           const c = await runCase(browser, cdp, o, input);
           cases.push(c);
-          const parity = c.reference.parity;
+          const look = c.reference.look;
           out(
             `gpu ${f(c.paced.gpu?.p50)} ms, cpu ${f(c.paced.cpu.p50, 3)} ms, saturated ${f(c.saturated.msPerFrame)} ms, ` +
-              `ioreg ${f(c.system.ioreg?.device, 0)} %${parity === null ? "" : `, parity ${parity.pass ? "pass" : "FAIL"}`}\n`,
+              `ioreg ${f(c.system.ioreg?.device, 0)} %${look === null ? "" : `, look ${look.pass ? "pass" : "FAIL"}`}\n`,
           );
         }
       }

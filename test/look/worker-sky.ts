@@ -1,6 +1,6 @@
 import type { SkyeParams } from "../../src/index.ts";
 import type { Frame } from "./harness.ts";
-import type { ParityReply, ParityRequest } from "./sky-worker.ts";
+import type { SkyReply, SkyRequest } from "./sky-worker.ts";
 
 const REPLY_TIMEOUT_MS = 10_000;
 
@@ -11,28 +11,17 @@ const REPLY_TIMEOUT_MS = 10_000;
  */
 export class WorkerSky {
   private readonly worker: Worker;
-  private readonly replies: ParityReply[] = [];
-  private waiting: ((reply: ParityReply) => void) | undefined;
+  private readonly replies: SkyReply[] = [];
+  private waiting: ((reply: SkyReply) => void) | undefined;
 
   private constructor() {
     this.worker = new Worker(new URL("./sky-worker.ts", import.meta.url), { type: "module" });
-    this.worker.addEventListener("message", (event: MessageEvent<ParityReply>) => {
+    this.worker.addEventListener("message", (event: MessageEvent<SkyReply>) => {
       const waiting = this.waiting;
       this.waiting = undefined;
       if (waiting === undefined) this.replies.push(event.data);
       else waiting(event.data);
     });
-  }
-
-  /** Whether this engine gives an `OffscreenCanvas` in a dedicated worker a WebGL2 context. */
-  static async supported(): Promise<boolean> {
-    const probe = new WorkerSky();
-    try {
-      const reply = await probe.next();
-      return reply.type === "probe" && reply.webgl2;
-    } finally {
-      probe.dispose();
-    }
   }
 
   static async create(
@@ -46,7 +35,7 @@ export class WorkerSky {
     const probe = await sky.next();
     if (probe.type !== "probe" || !probe.webgl2) throw new Error("no WebGL2 in the worker");
     const canvas = document.createElement("canvas").transferControlToOffscreen();
-    const init: ParityRequest = {
+    const init: SkyRequest = {
       type: "init",
       canvas,
       params,
@@ -78,11 +67,11 @@ export class WorkerSky {
     this.worker.terminate();
   }
 
-  private post(request: ParityRequest): void {
+  private post(request: SkyRequest): void {
     this.worker.postMessage(request);
   }
 
-  private next(): Promise<ParityReply> {
+  private next(): Promise<SkyReply> {
     const queued = this.replies.shift();
     if (queued !== undefined) return Promise.resolve(queued);
     return new Promise((resolve, reject) => {

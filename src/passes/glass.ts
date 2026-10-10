@@ -5,8 +5,11 @@ import * as glsl from "../shaders/generated.ts";
 import type { PassFrame } from "./frame.ts";
 import { raysActive } from "./rays.ts";
 
+/** How much rain on the glass blurs the view behind it, where no drop or trail has cleared it. */
+const WET_SHEEN = 0.32;
+
 /**
- * Pass 4: rain, frost and mist on the glass, rays, lens flare, exposure and
+ * The glass: rain, frost and mist on the glass, rays, lens flare, exposure and
  * tone mapping. Writes to the canvas, or to `out` when the blur chain follows.
  * Samples the scene on unit 0, the rays on unit 1 and, for the frost's value
  * noise, the sky's noise texture on unit 2.
@@ -45,20 +48,20 @@ export class GlassPass {
     gpu.bindTexture(0, scene);
     v[glsl.GLASS_uRes] = width;
     v[glsl.GLASS_uRes + 1] = height;
-    v.set(s.sunUV, glsl.GLASS_uSunUV);
-    v[glsl.GLASS_uTime] = f.time;
+    v.set(f.sunUV, glsl.GLASS_uSunUV);
+    v[glsl.GLASS_uTime] = f.seconds;
     v[glsl.GLASS_uRainG] = s.glassRain;
     v[glsl.GLASS_uFrost] = s.glassFrost;
     v[glsl.GLASS_uMist] = s.glassMist;
-    v[glsl.GLASS_uFlash] = f.flash;
-    v[glsl.GLASS_uExposure] = s.weatherExposure;
+    v[glsl.GLASS_uFlash] = f.lightning.flash;
+    v[glsl.GLASS_uExposure] = s.sceneExposure;
     v[glsl.GLASS_uSeed] = s.seed;
-    v[glsl.GLASS_uEnc] = f.enc;
+    v[glsl.GLASS_uEnc] = f.encoding;
     v[glsl.GLASS_uDim] = s.exposure;
-    v[glsl.GLASS_uWet] = 0.32 * s.glassRain;
+    v[glsl.GLASS_uWet] = WET_SHEEN * s.glassRain;
     v[glsl.GLASS_uRays] = raysActive(f) ? s.rays : 0;
     v[glsl.GLASS_uFlare] = s.flare;
-    v.set(s.sunTint, glsl.GLASS_uSunTint);
+    v.set(s.sun.tint, glsl.GLASS_uSunTint);
     v[glsl.GLASS_uDetail] = l.detail;
     gpu.drawFullscreen(this.program);
     f.pixels += width * height;
