@@ -13,7 +13,7 @@ import type { CreateSkyOptions, Sky, SkyEvents, SkyeStats } from "./api.ts";
 import { resolveParams, type Quality, type ResolvedParams, type SkyeParams } from "./params.ts";
 import { QualityController } from "./quality.ts";
 import { createRandom, type RandomSource } from "./random.ts";
-import { TIERS, type TierDef } from "./tables.ts";
+import { FIXED_TIERS, TIERS, type TierDef } from "./tables.ts";
 
 const FIRST_DT = 1 / 60;
 const MAX_DT = 0.1;
@@ -27,8 +27,8 @@ const FAST_POLLS = 25;
 // iterator, which V8's mid tier keeps.
 function tierOf(quality: Quality, autoTier: number): TierDef {
   if (quality === "auto") return TIERS[autoTier] ?? TIERS[1];
-  for (let i = 0; i < TIERS.length; i++) {
-    const t = TIERS[i];
+  for (let i = 0; i < FIXED_TIERS.length; i++) {
+    const t = FIXED_TIERS[i];
     if (t?.name === quality) return t;
   }
   return TIERS[1];
@@ -148,8 +148,11 @@ class SkyRenderer implements Sky {
 
   update(params: Partial<SkyeParams>): void {
     if (this.#disposed) return;
+    const quality = this.#params.quality;
     this.#input = { ...this.#input, ...params };
     this.#params = resolveParams(this.#input);
+    // The GPU-time average measured another tier: kept, it would make "auto" judge its tier on that cost.
+    if (this.#params.quality !== quality) this.#res.timer.reset();
     // What v6's attributeChangedCallback does: drop the cached target and restart the frame interval.
     this.#model.invalidate();
     this.#hasLastT = false;
@@ -327,7 +330,7 @@ class SkyRenderer implements Sky {
     const change = this.#quality.observe(dtMs, cap, timer.ms);
     if (change.resetGpu) timer.reset();
     if (change.changed) {
-      const tier = tierOf("auto", change.tier);
+      const tier = TIERS[change.tier] ?? TIERS[1];
       this.#events.emit("tierchange", { quality: tier.name, tier: change.tier });
     }
   }

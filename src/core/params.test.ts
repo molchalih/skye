@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULTS, resolveParams, type ResolvedParams, type SkyeParams } from "./params.ts";
+import {
+  DEFAULTS,
+  QUALITIES,
+  resolveParams,
+  type ResolvedParams,
+  type SkyeParams,
+} from "./params.ts";
 
 // Simulates untyped JS callers.
 function resolveRaw(json: string): ResolvedParams {
@@ -118,9 +124,16 @@ describe("resolveParams", () => {
 
   it("resolves unknown quality to balanced and keeps valid values", () => {
     expect(resolveRaw('{"quality":"ultra"}').quality).toBe("balanced");
-    for (const q of ["auto", "low", "balanced", "high"] as const) {
-      expect(resolveParams({ quality: q }).quality).toBe(q);
-    }
+    expect(QUALITIES).toEqual(["auto", "eco", "low", "balanced", "high"]);
+    for (const q of QUALITIES) expect(resolveParams({ quality: q }).quality).toBe(q);
+  });
+
+  it("matches quality names exactly, like v6's attribute", () => {
+    for (const q of ["ECO", "Eco", " eco", "eco ", "constructor", "toString"])
+      expect(resolveRaw(JSON.stringify({ quality: q })).quality).toBe("balanced");
+    expect(resolveRaw('{"quality":null}').quality).toBe("auto");
+    expect(resolveRaw('{"quality":""}').quality).toBe("auto");
+    expect(resolveRaw('{"quality":4}').quality).toBe("balanced");
   });
 
   it("treats unknown motion as full, as v6 does", () => {

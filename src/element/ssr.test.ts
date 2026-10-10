@@ -1,5 +1,5 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
-import type { TierChange } from "../core/api.ts";
+import type { SkyeStats, TierChange } from "../core/api.ts";
 import type { SkyeElement, SkyeElementEventMap } from "./index.ts";
 
 describe("without a DOM", () => {
@@ -16,6 +16,9 @@ describe("types", () => {
   it("maps the tag and types the element's events", () => {
     expectTypeOf<HTMLElementTagNameMap["skye-view"]>().toEqualTypeOf<SkyeElement>();
     expectTypeOf<SkyeElementEventMap["skye-tierchange"]>().toEqualTypeOf<CustomEvent<TierChange>>();
+    // Eco is a fixed tier the controller never picks, so a tier change never names it; stats can.
+    expectTypeOf<TierChange["quality"]>().toEqualTypeOf<"low" | "balanced" | "high">();
+    expectTypeOf<SkyeStats["quality"]>().toEqualTypeOf<"eco" | "low" | "balanced" | "high">();
     expectTypeOf<SkyeElementEventMap["skye-error"]>().toEqualTypeOf<CustomEvent<Error>>();
     expectTypeOf<SkyeElementEventMap["skye-ready"]>().toEqualTypeOf<CustomEvent<null>>();
     // Listener parameters are inferred from the event name; checked by the compiler, never run.

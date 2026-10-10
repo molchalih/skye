@@ -14,7 +14,7 @@
 //             visible, offscreen, hidden, static, reduced-motion.
 //
 // Options (all optional):
-//   --sizes 1280x720,1920x1080,2560x1440   --dprs 1,2   --tiers low,balanced,high
+//   --sizes 1280x720,1920x1080,2560x1440   --dprs 1,2   --tiers low,balanced,high   (also eco)
 //   --scenes cloudy@17.5,rainy@17.5        scene@hour pairs
 //   --blur 0                               background blur, CSS px
 //   --seconds 4 --warm 1.5 --pass-frames 120 --marginal-frames 20 --repeat 12 --saturate-frames 30
@@ -110,7 +110,8 @@ function size(s: string): readonly [number, number] {
 }
 
 function tier(t: string): Tier {
-  if (t !== "low" && t !== "balanced" && t !== "high") throw new Error(`bad tier: ${t}`);
+  if (t !== "eco" && t !== "low" && t !== "balanced" && t !== "high")
+    throw new Error(`bad tier: ${t}`);
   return t;
 }
 

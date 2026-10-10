@@ -1,5 +1,5 @@
 import type { Vec3 } from "./math.ts";
-import type { SceneName, Tier } from "./params.ts";
+import type { AutoTier, SceneName, Tier } from "./params.ts";
 
 export interface SceneDef {
   /** Cloud darkening at minimum and maximum intensity. */
@@ -19,8 +19,8 @@ export interface SceneDef {
   readonly dust?: number;
 }
 
-export interface TierDef {
-  readonly name: Tier;
+export interface TierDef<N extends Tier = Tier> {
+  readonly name: N;
   /** Cloud-buffer scale relative to the canvas backing store. */
   readonly sky: number;
   /** Composite and particle buffer scale relative to the backing store. */
@@ -58,7 +58,7 @@ export const SCENES: Readonly<Record<SceneName, SceneDef>> = {
 };
 
 /** Ordered low, balanced, high: auto-tiering steps through the indices. */
-export const TIERS: readonly [TierDef, TierDef, TierDef] = [
+export const TIERS: readonly [TierDef<AutoTier>, TierDef<AutoTier>, TierDef<AutoTier>] = [
   {
     name: "low",
     sky: 0.3,
@@ -102,6 +102,18 @@ export const TIERS: readonly [TierDef, TierDef, TierDef] = [
     fps: 60,
   },
 ];
+
+/**
+ * The opt-in tier below low, outside the auto ladder: only `quality: "eco"`
+ * selects it. Low's cloud layers, octaves, particles and ray taps, so the sky
+ * keeps low's shapes; fewer canvas pixels than CSS px (the page scales the
+ * canvas up), which softens it, and 20 fps, which calms it. A frame costs about
+ * 60 % of low's on the GPU, and draws a third fewer frames a second.
+ */
+export const ECO: TierDef<"eco"> = { ...TIERS[0], name: "eco", dpr: 0.75, fps: 20 };
+
+/** Every fixed tier, from cheapest to finest: what `quality` names besides `"auto"`. */
+export const FIXED_TIERS: readonly TierDef[] = [ECO, ...TIERS];
 
 export const BQ_STEPS: readonly number[] = [0.125, 0.1875, 0.25, 0.375, 0.5, 0.75, 1];
 

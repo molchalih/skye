@@ -2,14 +2,21 @@
 import type { SkyeAttribute } from "../src/element/attributes.ts";
 import { SCENE_NAMES, type ResolvedParams } from "../src/index.ts";
 import { $ } from "./dom.ts";
-import { PLACE_LATITUDES } from "./places.ts";
-import { scrubbable, type Readout, type ScrubSpec } from "./scrub.ts";
+import { PLACE_LATITUDES, placeAt } from "./places.ts";
+import { scrubbable, type Readout, type ScrubSpec, type Scrubber } from "./scrub.ts";
+import type { Direction } from "./step.ts";
 import { coverRange, daylight, intensityRange, moonPath, shown, sunAt } from "./sky.ts";
 import { attributesOf, type Store } from "./state.ts";
 import * as say from "./words.ts";
 
 /** The params the sentence carries as numbers, one italic word each. */
 type Worded = "dayOfYear" | "latitude" | "cover" | "intensity" | "moonPhase";
+
+/** The day of the year of the 21st of each month, in a common year: near each solstice and equinox. */
+const MONTH_21STS: readonly number[] = Array.from({ length: 12 }, (_, month) => {
+  const start = Date.UTC(2025, 0, 1);
+  return Math.round((Date.UTC(2025, month, 21) - start) / 86_400_000) + 1;
+});
 
 /** Every value the report lets you change. */
 export type Changeable = Worded | "scene" | "hour";
@@ -25,7 +32,9 @@ const ATTRIBUTE: Readonly<Record<Changeable, SkyeAttribute>> = {
   moonPhase: "moon-phase",
 };
 
-const SLIDER_LABEL: Readonly<Record<Worded, string>> = {
+/** What assistive technology calls each value in the sentence. */
+const LABEL: Readonly<Record<Exclude<Changeable, "hour">, string>> = {
+  scene: "Weather",
   dayOfYear: "Date",
   latitude: "Latitude",
   cover: "Cloud cover",
@@ -36,8 +45,8 @@ const SLIDER_LABEL: Readonly<Record<Worded, string>> = {
 export interface ReportOptions {
   store: Store;
   readout: Readout;
-  /** A drag on a value started or ended. */
-  onScrub: (key: Changeable, active: boolean) => void;
+  /** The person changed a value: a click, a key, or the start of a drag. */
+  onChange: (key: Changeable) => void;
 }
 
 export interface Report {
@@ -48,13 +57,14 @@ function setText(el: Element, text: string): void {
   if (el.textContent !== text) el.textContent = text;
 }
 
-export function createReport({ store, readout, onScrub }: ReportOptions): Report {
+export function createReport({ store, readout, onChange }: ReportOptions): Report {
   const clock = $("#clock");
   const prose = $("#prose");
   const ruler = $("#ruler");
   const mark = $(".ruler-mark", ruler);
-  const menu = $("#scene-menu");
   const moon = $(".moon path", prose, SVGPathElement);
+  const nudges = $("#nudges");
+  const report = $(".report");
 
   // ------------------------------------------------- the attribute behind each value
 
@@ -84,92 +94,263 @@ export function createReport({ store, readout, onScrub }: ReportOptions): Report
     el.addEventListener("blur", hide);
   }
 
-  const scrubbing = (key: Changeable, active: boolean): void => {
-    onScrub(key, active);
-    if (!active) unname();
-  };
-
   // ------------------------------------------------------------------- the sentence
 
   const token = (key: Changeable): HTMLElement => $(`[data-key="${key}"]`, prose);
+  const scrubbers: Scrubber[] = [];
 
-  type Spec = Omit<ScrubSpec, "get" | "set" | "onActive">;
+  type Spec = Omit<ScrubSpec, "onChange" | "onActive">;
 
-  function bind(key: Worded, spec: Spec): void {
-    const el = token(key);
-    el.tabIndex = 0;
-    el.setAttribute("role", "slider");
-    el.setAttribute("aria-label", SLIDER_LABEL[key]);
-    scrubbable(el, {
-      get: () => shown(store.get())[key],
-      set: (v) => store.set({ [key]: v }),
+  /** Makes `el` the value `key`: click to step, drag to scrub, and labelled with its attribute. */
+  function bind(el: HTMLElement, key: Changeable, spec: Spec): Scrubber {
+    const scrubber = scrubbable(el, {
       ...spec,
-      onActive: (active) => scrubbing(key, active),
+      onChange: () => onChange(key),
+      // The label stays up through a drag and goes when it ends.
+      onActive: (active) => {
+        if (!active) unname();
+      },
     });
+    scrubbers.push(scrubber);
     labelled(el, key);
+    return scrubber;
   }
 
-  const sceneToken = token("scene");
-  sceneToken.tabIndex = 0;
-  sceneToken.setAttribute("role", "button");
-  sceneToken.setAttribute("aria-haspopup", "menu");
-  scrubbable(sceneToken, {
-    // Dragging starts half way into the current scene, so either direction changes it after half a step.
-    get: () => SCENE_NAMES.indexOf(store.get().scene) + 0.5,
-    set: (v) => store.set({ scene: SCENE_NAMES[Math.floor(v)] ?? "cloudy" }),
-    range: () => [0, SCENE_NAMES.length],
-    perPixel: 1 / 40,
-    step: 1,
-    bigStep: 1,
-    wrap: true,
-    onTap: () => openMenu(),
-    onActive: (active) => scrubbing("scene", active),
-  });
-  labelled(sceneToken, "scene");
+  // ------------------------------------------------------ the arrows beside a value
 
-  bind("dayOfYear", { range: () => [1, 366], perPixel: 0.5, step: 1, bigStep: 7, wrap: true });
-  bind("latitude", {
-    range: () => [-66, 66],
-    perPixel: 0.25,
-    step: 1,
-    stops: () => PLACE_LATITUDES,
+  /** The values in the sentence, which show arrows. */
+  const values = new Map<HTMLElement, { key: Changeable; scrubber: Scrubber; tail?: Element }>();
+  const arrows = [...nudges.querySelectorAll("[data-way]")].filter(
+    (el) => el instanceof HTMLElement,
+  );
+  /** The value whose arrows show, or showed last while they fade. */
+  let reached: HTMLElement | null = null;
+  let reachedNow = false;
+  let overArrows = false;
+  /** The value a mouse or pen is over; tracked from events, as :hover can lag them. */
+  let hovering: HTMLElement | null = null;
+  /** Takes the mask off a sentence whose fades have gone out. */
+  let unmask: ReturnType<typeof setTimeout> | undefined;
+  /** A little longer than the fades take to go out. */
+  const UNMASK_MS = 250;
+
+  function dropMask(): void {
+    clearTimeout(unmask);
+    unmask = undefined;
+    if (!reachedNow) delete prose.dataset.mask;
+  }
+
+  prose.addEventListener("transitionend", (e) => {
+    if (e.target === prose && e.propertyName.startsWith("--erase")) dropMask();
   });
-  bind("cover", {
-    range: () => {
+
+  // The sentence reflows when the window or the Tune pane changes its width; the arrows and fades follow the value.
+  new ResizeObserver(() => {
+    if (reachedNow) reach();
+  }).observe(prose);
+
+  const flag = (el: HTMLElement, attr: string, on: boolean): void => {
+    if (on) el.dataset[attr] = "";
+    else delete el.dataset[attr];
+  };
+
+  /** The value whose arrows show: the one dragged, else hovered, else just touched, else focused by keyboard. */
+  function inReach(): { el: HTMLElement; touch: boolean } | null {
+    const all = [...values.keys()];
+    const dragged = all.find((el) => el.dataset.active !== undefined);
+    if (dragged !== undefined) return { el: dragged, touch: false };
+    // A pointer gone from a value onto one of its arrows keeps the value in reach, so the arrow stays to be clicked.
+    const hovered = hovering ?? (overArrows && reachedNow ? reached : null);
+    if (hovered !== null) return { el: hovered, touch: false };
+    const touched = all.find((el) => el.dataset.shown !== undefined);
+    if (touched !== undefined) return { el: touched, touch: true };
+    // Focus left by a click is no reason to keep the arrows once the pointer goes; focus from the keyboard is.
+    if (document.documentElement.dataset.input === "pointer") return null;
+    const focused = all.find((el) => el.matches(":focus-visible"));
+    return focused === undefined ? null : { el: focused, touch: false };
+  }
+
+  /**
+   * Lays the arrows beside the value in reach and fades the words they stand
+   * over. With none in reach they fade out where they stood.
+   */
+  function reach(): void {
+    const next = inReach();
+    if (reached !== null && reached !== next?.el) delete reached.dataset.reach;
+    reachedNow = next !== null;
+    flag(prose, "reach", reachedNow);
+    flag(nudges, "reach", reachedNow);
+    flag(nudges, "touch", next?.touch === true);
+    if (next === null) {
+      // The mask stays until the fades have gone out; the transition's end takes it off, or this, should none run.
+      if (prose.dataset.mask !== undefined && unmask === undefined)
+        unmask = setTimeout(dropMask, UNMASK_MS);
+      return;
+    }
+    clearTimeout(unmask);
+    unmask = undefined;
+    prose.dataset.mask = "";
+    reached = next.el;
+    reached.dataset.reach = "";
+
+    const at = reached.getBoundingClientRect();
+    // A value's own icon, the moon beside its phase, belongs to it: the fade starts past the icon, not on it.
+    const tail = values.get(reached)?.tail?.getBoundingClientRect();
+    const right =
+      tail !== undefined && tail.top < at.bottom && tail.bottom > at.top
+        ? Math.max(at.right, tail.right)
+        : at.right;
+    const sentence = prose.getBoundingClientRect();
+    const box = report.getBoundingClientRect();
+    const px = (v: number): string => `${Math.round(v * 10) / 10}px`;
+    prose.style.setProperty("--at-l", px(at.left - sentence.left));
+    prose.style.setProperty("--at-r", px(right - sentence.left));
+    prose.style.setProperty("--at-t", px(at.top - sentence.top));
+    prose.style.setProperty("--at-h", px(at.height));
+    nudges.style.setProperty("--l", px(at.left - box.left));
+    nudges.style.setProperty("--r", px(right - box.left));
+    nudges.style.setProperty("--y", px(at.top + at.height / 2 - box.top));
+    nudges.style.setProperty("--vl", px(-box.left));
+    nudges.style.setProperty("--vr", px(innerWidth - box.left));
+    for (const el of [prose, nudges]) {
+      const end = reached.dataset.end;
+      if (end === undefined) delete el.dataset.end;
+      else el.dataset.end = end;
+    }
+    nudges.dataset.heading = reached.dataset.heading ?? "up";
+  }
+
+  /** Whether a pointer event's other end is one of the arrows. */
+  const toArrow = (e: PointerEvent): boolean =>
+    e.relatedTarget instanceof Node && nudges.contains(e.relatedTarget);
+
+  for (const arrow of arrows) {
+    const way: Direction = arrow.dataset.way === "back" ? -1 : 1;
+    arrow.addEventListener("pointerenter", () => {
+      overArrows = true;
+      reach();
+      if (reached !== null) {
+        const entry = values.get(reached);
+        if (entry !== undefined) name(entry.key, reached);
+      }
+    });
+    // Leaving an arrow for anything but the other arrow or its value hides them at once.
+    arrow.addEventListener("pointerleave", (e) => {
+      overArrows = toArrow(e);
+      if (!overArrows) unname();
+      reach();
+    });
+    arrow.addEventListener("click", () => {
+      if (reached !== null) values.get(reached)?.scrubber.stepToward(way);
+    });
+  }
+
+  // Dragging, and the arrows that linger after a touch, show as attributes the scrubber sets.
+  const watch = new MutationObserver(reach);
+
+  /** A value in the sentence: focusable, a spin button to assistive technology, with arrows when in reach. */
+  function word(key: Exclude<Changeable, "hour">, spec: Spec, tail?: Element): void {
+    const el = token(key);
+    el.tabIndex = 0;
+    el.setAttribute("role", "spinbutton");
+    el.setAttribute("aria-label", LABEL[key]);
+    values.set(el, { key, scrubber: bind(el, key, spec), ...(tail === undefined ? {} : { tail }) });
+    el.addEventListener("pointerenter", (e) => {
+      // A touch has no hover: its arrows linger after it instead.
+      if (e.pointerType === "touch") return;
+      hovering = el;
+      reach();
+    });
+    // Leaving a value hides its arrows at once, unless the pointer went onto one of them, whose hit areas reach the
+    // value's edge.
+    el.addEventListener("pointerleave", (e) => {
+      if (hovering === el) hovering = null;
+      overArrows = toArrow(e);
+      reach();
+    });
+    el.addEventListener("focus", reach);
+    el.addEventListener("blur", reach);
+    watch.observe(el, { attributeFilter: ["data-active", "data-shown"] });
+  }
+
+  /** A worded param read and written as is. */
+  const param = (key: Worded): Pick<ScrubSpec, "get" | "set"> => ({
+    get: () => shown(store.get())[key],
+    set: (v) => store.set({ [key]: v }),
+  });
+
+  // The scenes in order; a click walks them to the last and back.
+  word("scene", {
+    get: () => SCENE_NAMES.indexOf(store.get().scene),
+    set: (v) => store.set({ scene: SCENE_NAMES[Math.round(v)] ?? "cloudy" }),
+    steps: () => ({ range: [0, SCENE_NAMES.length - 1], step: 1 }),
+    perPixel: 1 / 36,
+    fine: 1,
+    discrete: true,
+  });
+  // A click goes on to the 21st of the next month, so four clicks span a season; the year comes round.
+  word("dayOfYear", {
+    ...param("dayOfYear"),
+    // Cyclic, not ping-pong: the year has no last day to turn round at.
+    steps: () => ({ range: [1, 366], step: 1, stops: MONTH_21STS, cyclic: true }),
+    perPixel: 0.5,
+    fine: 1,
+    hold: 0,
+  });
+  // A click travels to the next place north, or south on the way back.
+  word("latitude", {
+    ...param("latitude"),
+    steps: () => ({ range: [-66, 66], step: 1, stops: PLACE_LATITUDES }),
+    perPixel: 0.25,
+    fine: 1,
+  });
+  word("cover", {
+    ...param("cover"),
+    steps: () => {
       const p = shown(store.get());
-      return coverRange(p.scene, p.intensity);
+      return { range: coverRange(p.scene, p.intensity), step: 0.1, origin: 0 };
     },
     perPixel: 0.004,
-    step: 0.05,
-    bigStep: 0.2,
+    fine: 0.01,
   });
-  bind("intensity", {
-    range: () => intensityRange(store.get().scene),
+  // One notch per word, so every click changes what the sentence says.
+  word("intensity", {
+    ...param("intensity"),
+    steps: () => {
+      const scene = store.get().scene;
+      const [lo, hi] = intensityRange(scene);
+      const words = say.INTENSITY[scene]?.words.length ?? 5;
+      return { range: [lo, hi], step: (hi - lo) / (words - 1), snap: true };
+    },
     perPixel: 0.004,
-    step: 0.05,
-    bigStep: 0.2,
+    fine: 0.01,
   });
-  bind("moonPhase", {
-    range: () => [0, 1],
-    perPixel: 0.002,
-    step: 1 / 30,
-    bigStep: 1 / 8,
-    wrap: true,
-  });
+  // A click goes on to the next of the eight named phases; the month comes round.
+  word(
+    "moonPhase",
+    {
+      ...param("moonPhase"),
+      // Cyclic, not ping-pong: the moon's month has no last phase to turn round at.
+      steps: () => ({ range: [0, 1], step: 1 / 8, cyclic: true, snap: true }),
+      perPixel: 0.002,
+      fine: 1 / 30,
+    },
+    $(".moon", prose, SVGSVGElement),
+  );
 
   // ---------------------------------------------------------------------- the clock
 
-  scrubbable(clock, {
+  // A click goes on to the next whole hour, always forward, since the clock shows no arrows to say which way; the
+  // ruler below is its keyboard control.
+  bind(clock, "hour", {
     get: () => store.get().hour,
     set: (hour) => store.set({ hour }),
-    range: () => [0, 24],
+    // Cyclic, not ping-pong: the day has no last hour to turn round at.
+    steps: () => ({ range: [0, 24], step: 1, cyclic: true }),
     perPixel: 0.025,
-    step: 1 / 6,
-    bigStep: 1,
-    wrap: true,
-    onActive: (active) => scrubbing("hour", active),
+    fine: 1 / 6,
+    steady: true,
   });
-  labelled(clock, "hour");
 
   // ---------------------------------------------------------------------- the ruler
 
@@ -184,7 +365,7 @@ export function createReport({ store, readout, onScrub }: ReportOptions): Report
     ruler.focus({ preventScroll: true });
     ruler.setPointerCapture(down.pointerId);
     ruler.dataset.active = "";
-    scrubbing("hour", true);
+    onChange("hour");
     store.set({ hour: hourAt(down.clientX) });
     name("hour", mark);
     const gesture = new AbortController();
@@ -192,7 +373,7 @@ export function createReport({ store, readout, onScrub }: ReportOptions): Report
     const end = (): void => {
       gesture.abort();
       delete ruler.dataset.active;
-      scrubbing("hour", false);
+      unname();
     };
     ruler.addEventListener("pointermove", (e) => store.set({ hour: hourAt(e.clientX) }), {
       signal,
@@ -220,51 +401,6 @@ export function createReport({ store, readout, onScrub }: ReportOptions): Report
     }
   });
 
-  // ----------------------------------------------------------------- the scene menu
-
-  const items = SCENE_NAMES.map((scene, i) => {
-    const item = document.createElement("button");
-    item.type = "button";
-    item.setAttribute("role", "menuitemradio");
-    item.dataset.scene = scene;
-    const word = document.createElement("span");
-    word.textContent = say.SCENE_ADJECTIVE[scene];
-    const key = document.createElement("kbd");
-    key.textContent = String(i + 1);
-    item.append(word, key);
-    item.addEventListener("click", () => {
-      store.set({ scene });
-      menu.hidePopover();
-    });
-    return item;
-  });
-  menu.append(...items);
-
-  menu.addEventListener("keydown", (e) => {
-    const at = items.findIndex((item) => item === document.activeElement);
-    const move = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0;
-    if (move !== 0) {
-      e.preventDefault();
-      items[(at + move + items.length) % items.length]?.focus();
-    }
-  });
-
-  menu.addEventListener("toggle", (e) => {
-    if (e.newState === "closed" && menu.contains(document.activeElement)) {
-      sceneToken.focus({ preventScroll: true });
-    }
-  });
-
-  function openMenu(): void {
-    unname();
-    menu.showPopover();
-    const anchor = sceneToken.getBoundingClientRect();
-    const box = menu.getBoundingClientRect();
-    menu.style.left = `${Math.min(Math.max(8, anchor.left - 14), innerWidth - box.width - 8)}px`;
-    menu.style.top = `${Math.max(8, anchor.top - box.height - 12)}px`;
-    items[SCENE_NAMES.indexOf(store.get().scene)]?.focus();
-  }
-
   // ------------------------------------------------------------------------- render
 
   const daypart = $('[data-text="daypart"]', prose);
@@ -276,11 +412,11 @@ export function createReport({ store, readout, onScrub }: ReportOptions): Report
   const polar = $('[data-sun="polar"]', ruler);
   let day = "";
 
-  function renderToken(key: Worded, text: string, value: number, valueText: string = text): void {
+  function renderToken(key: Exclude<Changeable, "hour">, text: string, valueText = text): void {
     const el = token(key);
     setText(el, text);
-    el.setAttribute("aria-valuenow", value.toFixed(2));
-    el.setAttribute("aria-valuetext", valueText);
+    if (el.getAttribute("aria-valuetext") !== valueText)
+      el.setAttribute("aria-valuetext", valueText);
   }
 
   function renderRuler(p: ResolvedParams): void {
@@ -317,31 +453,31 @@ export function createReport({ store, readout, onScrub }: ReportOptions): Report
 
     setText(clock, say.formatTime(p.hour));
 
-    const adjective = say.SCENE_ADJECTIVE[p.scene];
-    setText(sceneToken, adjective);
-    sceneToken.setAttribute("aria-label", `Weather: ${adjective}`);
+    renderToken("scene", say.SCENE_ADJECTIVE[p.scene]);
     setText(daypart, say.daypart(sun.elevationDeg, say.fromNoon(p.hour, p.solarNoon), sun.polar));
-    renderToken("dayOfYear", say.formatDay(p.dayOfYear), p.dayOfYear);
-    renderToken("latitude", say.formatLatitude(p.latitude), p.latitude);
-    renderToken("cover", say.formatPercent(p.cover), p.cover);
-    renderToken("moonPhase", say.moonName(p.moonPhase), p.moonPhase);
+    renderToken("dayOfYear", say.formatDay(p.dayOfYear));
+    const place = placeAt(p.latitude);
+    const latitude = say.formatLatitude(p.latitude);
+    renderToken("latitude", latitude, place === "" ? latitude : `${latitude}, ${place}`);
+    renderToken("cover", say.formatPercent(p.cover));
+    renderToken("moonPhase", say.moonName(p.moonPhase));
 
     const intensity = say.INTENSITY[p.scene];
     clause.hidden = intensity === undefined;
     if (intensity !== undefined) {
       const [lo, hi] = intensityRange(p.scene);
       setText(lead, intensity.lead);
-      const word = say.pick(intensity.words, (p.intensity - lo) / (hi - lo));
-      renderToken("intensity", word, p.intensity, `${word}, ${say.formatPercent(p.intensity)}`);
+      const strength = say.pick(intensity.words, (p.intensity - lo) / (hi - lo));
+      renderToken("intensity", strength, `${strength}, ${say.formatPercent(p.intensity)}`);
     }
 
     // The moon as seen from the north; the south sees it mirrored.
     moon.setAttribute("d", say.moonName(p.moonPhase) === "new" ? "" : moonPath(p.moonPhase));
     moon.setAttribute("transform", p.latitude < 0 ? "scale(-1 1)" : "");
 
-    for (const item of items)
-      item.setAttribute("aria-checked", String(item.dataset.scene === p.scene));
-
+    for (const scrubber of scrubbers) scrubber.sync();
+    // A value's width changes with what it says, and the arrows and fades follow its edges.
+    if (reachedNow) reach();
     renderRuler(p);
     if (named !== null) name(named.key, named.el);
   }

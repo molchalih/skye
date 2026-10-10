@@ -2,10 +2,15 @@ import { clamp } from "./math.ts";
 
 /** A weather scene: what the sky shows besides the time of day. */
 export type SceneName = "clear" | "cloudy" | "fog" | "rainy" | "storm" | "sleet" | "snowy" | "haze";
-/** A fixed quality tier, or `"auto"`, which picks one from the measured frame time. */
-export type Quality = "auto" | "low" | "balanced" | "high";
-/** A fixed quality tier: what `"auto"` resolves to at any moment. */
+/**
+ * A fixed quality tier, or `"auto"`, which picks low, balanced or high from
+ * the measured frame time. `"eco"` is opt-in only: `"auto"` never picks it.
+ */
+export type Quality = "auto" | "eco" | "low" | "balanced" | "high";
+/** A fixed quality tier: what `quality` resolves to at any moment. */
 export type Tier = Exclude<Quality, "auto">;
+/** A tier `"auto"` can pick: every tier but `"eco"`. */
+export type AutoTier = Exclude<Tier, "eco">;
 /** `"full"` animates, `"static"` draws one frame per change, `"auto"` follows prefers-reduced-motion. */
 export type Motion = "auto" | "full" | "static";
 
@@ -21,7 +26,7 @@ export const SCENE_NAMES: readonly SceneName[] = [
   "haze",
 ];
 /** Every `quality` value, `"auto"` first, then the tiers from cheapest to finest. */
-export const QUALITIES: readonly Quality[] = ["auto", "low", "balanced", "high"];
+export const QUALITIES: readonly Quality[] = ["auto", "eco", "low", "balanced", "high"];
 /** Every `motion` value. */
 export const MOTIONS: readonly Motion[] = ["auto", "full", "static"];
 
@@ -61,7 +66,11 @@ export interface SkyeParams {
   exposure?: number | undefined;
   /** Background blur in px, clamped to 0-64. */
   blur?: number | undefined;
-  /** Quality tier, or `"auto"` to adapt to frame time. Unknown values resolve to `"balanced"`. */
+  /**
+   * Quality tier, or `"auto"` to adapt to frame time among low, balanced and
+   * high. `"eco"` is a fixed tier below low, softer and at a lower frame rate;
+   * `"auto"` never picks it. Unknown values resolve to `"balanced"`.
+   */
   quality?: Quality | undefined;
   /** `"static"` renders a single frame; `"auto"` follows prefers-reduced-motion. */
   motion?: Motion | undefined;
@@ -123,10 +132,10 @@ export function resolveScene(v: unknown): SceneName {
   return SCENE_NAMES.find((name) => name === v) ?? DEFAULTS.scene;
 }
 
-/** Empty or absent is `"auto"`; anything other than `"low"` or `"high"` is `"balanced"`. */
+/** Empty or absent is `"auto"`; anything that is not a quality is `"balanced"`. */
 export function resolveQuality(v: unknown): Quality {
-  if (v === undefined || v === null || v === "" || v === "auto") return "auto";
-  return v === "low" || v === "high" ? v : "balanced";
+  if (v === undefined || v === null || v === "") return "auto";
+  return QUALITIES.find((q) => q === v) ?? "balanced";
 }
 
 /** Empty or absent is `"auto"`; v6 treats any motion other than `"static"` or `"auto"` as full motion. */

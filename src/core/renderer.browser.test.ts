@@ -221,6 +221,25 @@ describe("createSky", () => {
     });
   });
 
+  it("sizes eco below one canvas pixel per CSS px, and follows the tier in and out of it", async () => {
+    const { sky, canvas } = make({ quality: "eco" });
+    await nextEvent(sky, "ready");
+    sky.resize(160, 80, 2);
+    sky.render(0);
+    const eco = { out: [120, 60], sky: [36, 18], scene: [60, 30] };
+    expect([canvas.width, canvas.height]).toEqual(eco.out);
+    expect(sky.stats()).toMatchObject({ quality: "eco", auto: false, tier: 1, fpsCap: 20, ...eco });
+    sky.update({ quality: "balanced" });
+    sky.render(0.016);
+    expect(sky.stats()).toMatchObject({ quality: "balanced", out: [160, 80], sky: [72, 36] });
+    sky.update({ quality: "eco" });
+    sky.render(0.032);
+    expect(sky.stats()).toMatchObject({ quality: "eco", ...eco });
+    sky.update({ quality: "auto" });
+    sky.render(0.048);
+    expect(sky.stats()).toMatchObject({ quality: "balanced", auto: true, tier: 1, out: [160, 80] });
+  });
+
   it("does nothing after dispose, however often it is called", async () => {
     const { sky } = make();
     await nextEvent(sky, "ready");

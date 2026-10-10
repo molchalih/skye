@@ -50,6 +50,7 @@ describe("props to attributes", () => {
         focus={0.3}
         blur={8}
         glass
+        quality="eco"
       />,
     );
     const el = viewIn(box);
@@ -61,6 +62,7 @@ describe("props to attributes", () => {
     expect(el.getAttribute("focus-depth")).toBe("0.3");
     expect(el.getAttribute("blur-radius")).toBe("8");
     expect(el.getAttribute("glass")).toBe("1");
+    expect(el.getAttribute("quality")).toBe("eco");
   });
 
   it("writes glass={false} as 0 and omits undefined props", async () => {

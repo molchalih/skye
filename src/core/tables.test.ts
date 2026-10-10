@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { SCENE_NAMES } from "./params.ts";
-import { BLUR_DURATION_S, BQ_STEPS, SCENES, SKY_STOPS, TIERS } from "./tables.ts";
+import { QUALITIES, SCENE_NAMES } from "./params.ts";
+import { BLUR_DURATION_S, BQ_STEPS, ECO, FIXED_TIERS, SCENES, SKY_STOPS, TIERS } from "./tables.ts";
 
 describe("tables", () => {
   it("defines every scene", () => {
@@ -26,6 +26,12 @@ describe("tables", () => {
     expect(TIERS[1].rayTaps).toBe(10);
     expect(TIERS[2].dpr).toBe(1.5);
     expect(TIERS[0].fps).toBe(30);
+  });
+
+  it("keeps eco out of the auto ladder, as low at a lower pixel-ratio and frame-rate cap", () => {
+    expect(TIERS.map((t) => t.name)).not.toContain("eco");
+    expect(ECO).toEqual({ ...TIERS[0], name: "eco", dpr: 0.75, fps: 20 });
+    expect(FIXED_TIERS.map((t) => t.name)).toEqual(QUALITIES.filter((q) => q !== "auto"));
   });
 
   it("keeps v6 constants", () => {

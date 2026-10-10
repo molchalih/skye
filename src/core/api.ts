@@ -1,4 +1,4 @@
-import type { SkyeParams, Tier } from "./params.ts";
+import type { AutoTier, SkyeParams, Tier } from "./params.ts";
 import type { RandomSource } from "./random.ts";
 
 /** Events a sky emits, mapped to their payloads. */
@@ -26,14 +26,18 @@ export interface SkyEvents {
    * rebuilt and linked, and frames draw again.
    */
   contextrestored: undefined;
-  /** The automatic quality controller moved to another tier (`quality: "auto"` only). */
+  /**
+   * The automatic quality controller moved to another tier (`quality: "auto"`
+   * only). Never fires for a fixed tier, `"eco"` included, nor when `quality`
+   * itself changes.
+   */
   tierchange: TierChange;
 }
 
 /** Payload of the `tierchange` event. */
 export interface TierChange {
-  /** The tier now in use. */
-  quality: Tier;
+  /** The tier now in use: low, balanced or high, never `"eco"`. */
+  quality: AutoTier;
   /** Its index: 0 low, 1 balanced, 2 high. */
   tier: number;
 }
@@ -42,14 +46,15 @@ export interface TierChange {
 export interface SkyeStats {
   /** Always `"skye"` (v6 reported `"v6"`). */
   renderer: "skye";
-  /** Tier in use. */
+  /** Tier in use: the fixed `quality`, or the one `"auto"` picked. */
   quality: Tier;
   /** Whether the tier adapts to frame time. */
   auto: boolean;
   /**
    * The automatic controller's tier index (0 low, 1 balanced, 2 high), as v6
-   * reported it. Under a fixed `quality` it is not the tier in use (that is
-   * `quality`): it keeps the controller's last value, 1 until it has moved.
+   * reported it. Under a fixed `quality`, `"eco"` included, it is not the tier
+   * in use (that is `quality`): it keeps the controller's last value, 1 until
+   * it has moved, and `"auto"` resumes from it. `"eco"` has no index.
    */
   tier: number;
   /**

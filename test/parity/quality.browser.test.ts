@@ -27,7 +27,8 @@ describe("static parity with v6 per setting", () => {
   });
 
   const cases: { name: string; params: SkyeParams }[] = [
-    ...(["low", "balanced", "high", "auto"] as const).flatMap((quality) =>
+    // Eco is held to v6 amended with an eco row (image-edits.ts), as the gate holds every other approved change.
+    ...(["eco", "low", "balanced", "high", "auto"] as const).flatMap((quality) =>
       VIEWS.map((v) => ({ name: `quality ${quality}, ${v.scene}`, params: { ...v, quality } })),
     ),
     ...(["rainy", "snowy", "fog"] as const).map((scene) => ({
@@ -55,7 +56,9 @@ describe("static parity with v6 per setting", () => {
 
 describe("parity with v6 at device pixel ratios above 1", () => {
   // Low and balanced cap the ratio at 1, high at 1.5; 1.25 stays under the cap, so buffers scale by a fraction.
+  // Eco caps it at 0.75, below one canvas pixel per CSS px; the page scales the canvas up.
   const cases = [
+    { quality: "eco", ratio: 2, canvas: [240, 150] },
     { quality: "balanced", ratio: 2, canvas: [320, 200] },
     { quality: "high", ratio: 1.25, canvas: [400, 250] },
     { quality: "high", ratio: 2, canvas: [480, 300] },

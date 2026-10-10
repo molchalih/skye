@@ -5,6 +5,7 @@ export {
   QUALITIES,
   SCENE_NAMES,
   resolveParams,
+  type AutoTier,
   type Motion,
   type Quality,
   type ResolvedParams,

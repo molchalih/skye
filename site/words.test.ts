@@ -6,6 +6,7 @@ import {
   formatLatitude,
   formatTime,
   fromNoon,
+  INTENSITY,
   moonName,
   pick,
 } from "./words.ts";
@@ -32,6 +33,13 @@ describe("words", () => {
     expect(pick(words, 0)).toBe("a");
     expect(pick(words, 0.5)).toBe("b");
     expect(pick(words, 1)).toBe("c");
+  });
+
+  it("says a different word at each of the notches a click steps intensity through", () => {
+    for (const { words } of Object.values(INTENSITY)) {
+      const said = words.map((_, i) => pick(words, i / (words.length - 1)));
+      expect(said).toEqual(words);
+    }
   });
 
   it("follows the light through a June day in Amsterdam", () => {

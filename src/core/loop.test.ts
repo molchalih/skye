@@ -61,13 +61,13 @@ describe("FrameLoop", () => {
     expect(r.times).toHaveLength(3);
   });
 
-  it("skips frames under a cap below 60 fps, with 2 ms of slack", () => {
+  it("skips frames under a cap below 60 fps, halfway between display frames", () => {
     const display = new Display().install();
     const r = recorder();
     r.cap = 30;
     const loop = new FrameLoop(r);
     loop.wake();
-    // 60 Hz display: every other frame arrives 33.3 ms after the last drawn one, within the slack of 1000/30.
+    // 60 Hz display: every other frame arrives 33.3 ms after the last drawn one, past the cap's 1000/30 ms less 2 ms.
     for (let i = 0; i < 7; i++) display.tick(1000 / 60);
     expect(r.times).toHaveLength(4);
     expect(r.caps).toEqual([30, 30, 30, 30]);
@@ -79,6 +79,104 @@ describe("FrameLoop", () => {
     // A restarted interval draws at once and reports 1/60 s.
     expect(r.times).toHaveLength(5);
     expect(r.intervals.at(-1)).toBeCloseTo(1000 / 60, 9);
+  });
+
+  // Display frames per drawn frame: the first frame at or past the cap's interval less 2 ms, as v6 paced, at every
+  // common rate. Each timestamp is up to 0.9 ms off its vsync, so an interval between two drawn frames is up to 1.8 ms
+  // off: v6's fixed threshold, 0.5 ms from the nearest frame at 165 Hz under 20 fps, would drop some of them a frame.
+  const PACING = [
+    { cap: 20, hz: 50, frames: 3 },
+    { cap: 20, hz: 60, frames: 3 },
+    { cap: 20, hz: 75, frames: 4 },
+    { cap: 20, hz: 90, frames: 5 },
+    { cap: 20, hz: 100, frames: 5 },
+    { cap: 20, hz: 120, frames: 6 },
+    { cap: 20, hz: 144, frames: 7 },
+    { cap: 20, hz: 165, frames: 8 },
+    { cap: 20, hz: 240, frames: 12 },
+    { cap: 30, hz: 50, frames: 2 },
+    { cap: 30, hz: 60, frames: 2 },
+    { cap: 30, hz: 75, frames: 3 },
+    { cap: 30, hz: 90, frames: 3 },
+    { cap: 30, hz: 100, frames: 4 },
+    { cap: 30, hz: 120, frames: 4 },
+    { cap: 30, hz: 144, frames: 5 },
+    { cap: 30, hz: 165, frames: 6 },
+    { cap: 30, hz: 240, frames: 8 },
+  ];
+
+  /** Ticks `count` display frames at `hz` from frame `from`, each up to 0.9 ms off its vsync in a fixed pattern. */
+  function ticks(display: Display, hz: number, from: number, count: number): void {
+    const stamp = (i: number): number => (i * 1000) / hz + 0.9 * Math.sin(i * 12.9898);
+    for (let i = from + 1; i <= from + count; i++) display.tick(stamp(i) - stamp(i - 1));
+  }
+
+  it.each(PACING)(
+    "holds a cap of $cap fps to every $frames frames at $hz Hz, with jittery timestamps",
+    ({ cap, hz, frames }) => {
+      const display = new Display().install();
+      const r = recorder();
+      r.cap = cap;
+      const loop = new FrameLoop(r);
+      loop.wake();
+      // A second for the loop to measure the display's frame interval, then 20 capped frames.
+      ticks(display, hz, 0, hz);
+      const settled = r.intervals.length;
+      ticks(display, hz, hz, 20 * frames);
+      const counts = r.intervals.slice(settled).map((ms) => Math.round((ms * hz) / 1000));
+      expect(counts.length).toBeGreaterThanOrEqual(19);
+      expect(new Set(counts)).toEqual(new Set([frames]));
+    },
+  );
+
+  it("keeps the display's frame interval across an idle gap", () => {
+    const display = new Display().install();
+    const r = recorder();
+    r.cap = 20;
+    const loop = new FrameLoop(r);
+    loop.wake();
+    ticks(display, 144, 0, 144);
+    loop.sleep();
+    display.tick(5000);
+    loop.wake();
+    // The first frame after the gap draws at once; the 5 s it spans are no display frame interval.
+    const settled = r.intervals.length + 1;
+    ticks(display, 144, 1000, 140);
+    const counts = r.intervals.slice(settled).map((ms) => Math.round((ms * 144) / 1000));
+    expect(counts.length).toBeGreaterThanOrEqual(19);
+    expect(new Set(counts)).toEqual(new Set([7]));
+  });
+
+  it.each([75, 100, 165])(
+    "draws every frame once rAF drops to 30 fps on a %i Hz display under a cap of 30",
+    (hz) => {
+      const display = new Display().install();
+      const r = recorder();
+      r.cap = 30;
+      const loop = new FrameLoop(r);
+      loop.wake();
+      ticks(display, hz, 0, hz);
+      const drawn = r.times.length;
+      // Energy savers hold rAF to 30 fps: 2.5, 3.3 and 5.5 of the frames the loop measured.
+      for (let i = 0; i < 90; i++) display.tick(1000 / 30);
+      expect(r.times.length - drawn).toBe(90);
+    },
+  );
+
+  it("keeps the cadence across a missed vsync", () => {
+    const display = new Display().install();
+    const r = recorder();
+    r.cap = 30;
+    const loop = new FrameLoop(r);
+    loop.wake();
+    for (let i = 0; i < 165; i++) display.tick(1000 / 165);
+    const settled = r.intervals.length;
+    // One vsync without a frame: an interval of two display frames, not one longer frame.
+    display.tick(2000 / 165);
+    for (let i = 0; i < 120; i++) display.tick(1000 / 165);
+    const counts = r.intervals.slice(settled).map((ms) => Math.round((ms * 165) / 1000));
+    expect(counts.length).toBeGreaterThanOrEqual(20);
+    expect(new Set(counts)).toEqual(new Set([6]));
   });
 
   it("draws one frame per wake while static, outside the meters", () => {
@@ -143,6 +241,24 @@ describe("FrameLoop", () => {
     const drawn = r.times.length;
     vi.advanceTimersByTime(1000);
     expect(r.times).toHaveLength(drawn);
+  });
+
+  it("recovers the cap's rate on a timer that ticked slower than asked", () => {
+    vi.stubGlobal("requestAnimationFrame", undefined);
+    vi.useFakeTimers();
+    // A throttled timer: no tick sooner than 23 ms.
+    const setTimer = globalThis.setTimeout;
+    vi.stubGlobal("setTimeout", (cb: () => void, ms: number) => setTimer(cb, Math.max(ms, 23)));
+    const r = recorder();
+    const loop = new FrameLoop(r);
+    loop.wake();
+    vi.advanceTimersByTime(1000);
+    r.cap = 30;
+    vi.advanceTimersByTime(1000);
+    const drawn = r.times.length;
+    vi.advanceTimersByTime(1000);
+    expect(r.times.length - drawn).toBeGreaterThanOrEqual(29);
+    loop.sleep();
   });
 
   it("steps static frames by 1/60 s and measures the next animated one from the last animated frame", () => {

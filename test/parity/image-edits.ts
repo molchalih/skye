@@ -2,7 +2,9 @@
 // text in two ways. Exact edits change no value, though compiler rounding may move a channel by 1/255:
 // scripts/shaders.test.ts lists them, and the parity gate holds them to v6. The edits here change the image. The gate
 // applies them to v6's own programs before it compares, so it holds what they change to the approved image, and
-// everything else still to v6.
+// everything else still to v6. One change is not a shader edit: the opt-in eco tier, a row v6's tier table lacks
+// (`V6_ECO_TIER`), which holds skye's eco sizing, a pixel ratio below 1 included, to v6's own sizing code.
+import type { TierDef } from "../../src/core/tables.ts";
 import { referenceLattice } from "./lattice.ts";
 
 /** A v6 snippet and its replacement. A snippet matches up to whitespace and must occur exactly once. */
@@ -169,8 +171,43 @@ export function amendedV6Fragments(source: (property: string) => string): Record
   return out;
 }
 
+/**
+ * The opt-in eco tier as a row of v6's own tier table, which has no such row:
+ * low's numbers at a lower pixel-ratio and frame-rate cap. Written out here
+ * rather than read from skye, so a change to skye's eco tier fails the gate
+ * like any other change to the image.
+ */
+export const V6_ECO_TIER: TierDef<"eco"> = Object.freeze({
+  name: "eco",
+  sky: 0.3,
+  scene: 0.5,
+  dpr: 0.75,
+  start: 1,
+  end: 3,
+  oct: 4,
+  rain: 2500,
+  snow: 700,
+  dust: 250,
+  rayTaps: 6,
+  fps: 20,
+});
+
+/**
+ * Gives v6 the eco tier: v6 reads every tier through `_q()`, which falls back
+ * to balanced for a name it does not know, so `quality="eco"` now reads the
+ * eco row instead. Every other quality reads v6's own table as before.
+ */
+export function amendV6Tiers(el: HTMLElement): void {
+  const tierOf: unknown = Reflect.get(el, "_q");
+  if (typeof tierOf !== "function") throw new Error("v6 has no _q");
+  Reflect.set(el, "_q", (): unknown =>
+    el.getAttribute("quality") === V6_ECO_TIER.name ? V6_ECO_TIER : Reflect.apply(tierOf, el, []),
+  );
+}
+
 /** Gives v6, once its programs are linked, every approved image change. */
 export function amendV6(el: HTMLElement): void {
   const fragments = amendedV6Fragments((property) => v6FragmentSource(el, property));
   amendV6Programs(el, { fragments, lattice: referenceLattice() });
+  amendV6Tiers(el);
 }

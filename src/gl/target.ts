@@ -45,14 +45,21 @@ export class Target {
   resize(width: number, height: number): void {
     if (this.width === width && this.height === height) return;
     const gl = this.#gl;
+    // Half-float RGBA for HDR where the context renders to it, else one 8-bit channel or four.
+    const half = this.#kind === "hdr" && this.#float;
+    const r8 = this.#kind === "r8";
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
-    if (this.#kind === "hdr" && this.#float) {
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, width, height, 0, gl.RGBA, gl.HALF_FLOAT, null);
-    } else if (this.#kind === "r8") {
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, width, height, 0, gl.RED, gl.UNSIGNED_BYTE, null);
-    } else {
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-    }
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      half ? gl.RGBA16F : r8 ? gl.R8 : gl.RGBA8,
+      width,
+      height,
+      0,
+      r8 ? gl.RED : gl.RGBA,
+      half ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE,
+      null,
+    );
     this.width = width;
     this.height = height;
   }

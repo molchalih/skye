@@ -9,15 +9,13 @@
   <img alt="Bun" src="https://img.shields.io/badge/Bun-%23000000.svg?style=for-the-badge&logo=bun&logoColor=white" />
 </p>
 
-# @a240/skye
-
 Welcome, guest! You've stumbled upon skyè, a zero-dependency WebGL2 sky renderer.
 
 It's a rather small library with a rather large responsibility: rendering the entire sky inside a browser. Clouds, rain, stars, fog, and everything in between, all squeezed into a handful of shaders.
 
 Crucially, no dependencies, no weather gods to appease. Just a tiny atmosphere you can call your own :)
 
-[Try it live](https://molchalih.github.io/skye/): change the weather, time and place, then copy the markup.
+[Try it live](https://skye.240.agency): change the weather, time and place, then copy the markup.
 
 ## Install
 
@@ -90,6 +88,8 @@ sky.resize(canvas.clientWidth, canvas.clientHeight, devicePixelRatio); // the on
 sky.start(); // the sky's own requestAnimationFrame loop
 sky.update({ scene: "snowy" }); // merge params; the sky eases toward them
 ```
+
+Give the canvas a CSS size: the sky sets its backing store, which may be smaller (`eco`) or larger than the box, and the page scales it to fit.
 
 To drive frames yourself, call `render(t)` (seconds) instead of `start()`, never both:
 
@@ -194,8 +194,10 @@ One table for core, element and React. Bad values are clamped, wrapped or defaul
 | `focus`     | `focus-depth` | 0.12 to 1. Glass focus depth                                                  | `0.45`   |
 | `exposure`  | `exposure`    | 0.2 to 1.2. Overall brightness                                                | `1`      |
 | `blur`      | `blur-radius` | CSS px, 0 to 64. Background blur                                              | `0`      |
-| `quality`   | `quality`     | `auto` `low` `balanced` `high`. `auto` adapts to frame time                   | `auto`   |
+| `quality`   | `quality`     | `auto` `eco` `low` `balanced` `high`. `auto` adapts, never to `eco`           | `auto`   |
 | `motion`    | `motion`      | `auto` `full` `static`. See [reduced motion](#behaviour)                      | `auto`   |
+
+`eco` trades sharpness and frame rate for battery: low's sky at a 0.75 pixel-ratio cap (even on 1x screens) and 20 fps, about 60 % of low's GPU time per frame.
 
 `DEFAULTS` and `resolveParams` come from `@a240/skye`; `toAttributes(params)` from `@a240/skye/element`.
 
@@ -203,21 +205,21 @@ One table for core, element and React. Bad values are clamped, wrapped or defaul
 
 `stats()` returns a snapshot; the element returns `null` before a sky is running.
 
-| Field                 | Meaning                                                                                        |
-| --------------------- | ---------------------------------------------------------------------------------------------- |
-| `renderer`            | Always `"skye"`.                                                                               |
-| `quality`, `auto`     | Tier in use, and whether it adapts.                                                            |
-| `tier`                | The auto controller's tier index, 0 to 2 (kept at its last value under a fixed `quality`).     |
-| `gpuMs`               | Smoothed GPU ms per frame, or -1. Needs a GPU timer and `quality="auto"` or `sky.probe(true)`. |
-| `cpuMs`               | Smoothed CPU ms per frame, or -1 before the first.                                             |
-| `fps`, `fpsCap`       | Frames drawn in the last second, and the loop's cap.                                           |
-| `blur`                | Eased blur radius in CSS px.                                                                   |
-| `out`, `sky`, `scene` | `[width, height]` of the canvas, the sky pass and the scene pass.                              |
-| `mpx`, `passes`       | Megapixels shaded and draw passes in the last frame.                                           |
-| `timer`               | Whether a GPU timer is available.                                                              |
-| `hdr`                 | `"half-float"`, or `"rgba8"` without `EXT_color_buffer_float`.                                 |
-| `static`              | Whether frames are static.                                                                     |
-| `worker`              | Whether the sky renders in a worker.                                                           |
+| Field                 | Meaning                                                                                                 |
+| --------------------- | ------------------------------------------------------------------------------------------------------- |
+| `renderer`            | Always `"skye"`.                                                                                        |
+| `quality`, `auto`     | Tier in use, and whether it adapts.                                                                     |
+| `tier`                | The auto controller's tier index, 0 to 2 (kept under a fixed `quality`; `eco` has no index of its own). |
+| `gpuMs`               | Smoothed GPU ms per frame, or -1. Needs a GPU timer and `quality="auto"` or `sky.probe(true)`.          |
+| `cpuMs`               | Smoothed CPU ms per frame, or -1 before the first.                                                      |
+| `fps`, `fpsCap`       | Frames drawn in the last second, and the loop's cap.                                                    |
+| `blur`                | Eased blur radius in CSS px.                                                                            |
+| `out`, `sky`, `scene` | `[width, height]` of the canvas, the sky pass and the scene pass.                                       |
+| `mpx`, `passes`       | Megapixels shaded and draw passes in the last frame.                                                    |
+| `timer`               | Whether a GPU timer is available.                                                                       |
+| `hdr`                 | `"half-float"`, or `"rgba8"` without `EXT_color_buffer_float`.                                          |
+| `static`              | Whether frames are static.                                                                              |
+| `worker`              | Whether the sky renders in a worker.                                                                    |
 
 ## Events
 
@@ -262,16 +264,16 @@ Brotli at quality 11, gzip at level 9 (`gzip -9`); 1 kB is 1000 bytes.
 | Entry               | Size    | Contents                               |
 | ------------------- | ------- | -------------------------------------- |
 | `@a240/skye`        | 16.8 kB | Core.                                  |
-| `@a240/skye/define` | 19.9 kB | Element and core.                      |
-| `@a240/skye/react`  | 20.4 kB | Component, element and core, no React. |
+| `@a240/skye/define` | 20.0 kB | Element and core.                      |
+| `@a240/skye/react`  | 20.6 kB | Component, element and core, no React. |
 
 **From a CDN as published**, each file compressed on its own. Each entry imports every file it needs, so the browser requests them all in a second round, after the entry itself:
 
 | Entry              | Files | Rounds | Minified | Brotli  | gzip    |
 | ------------------ | ----- | ------ | -------- | ------- | ------- |
-| `dist/define.js`   | 5     | 2      | 61.1 kB  | 21.2 kB | 23.9 kB |
-| `dist/index.js`    | 3     | 2      | 49.3 kB  | 17.3 kB | 19.4 kB |
-| `dist/worker.js`\* | 4     | 2      | 52.7 kB  | 18.5 kB | 20.8 kB |
+| `dist/define.js`   | 5     | 2      | 61.2 kB  | 21.3 kB | 24.0 kB |
+| `dist/index.js`    | 3     | 2      | 49.5 kB  | 17.4 kB | 19.5 kB |
+| `dist/worker.js`\* | 4     | 2      | 52.9 kB  | 18.6 kB | 20.9 kB |
 
 \* Only `worker.js` itself (1.2 kB brotli) is new; the rest the page already has.
 

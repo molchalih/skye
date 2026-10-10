@@ -192,6 +192,25 @@ describe("context loss", () => {
     expect(sky.stats()).toMatchObject({ gpuMs: 3, timer: true });
   });
 
+  it("restores eco at its own sizes, below one canvas pixel per CSS px", async () => {
+    const { sky, gl, canvas } = makeSky({ ...PARAMS, quality: "eco" });
+    await next(sky, "ready");
+    sky.resize(160, 80, 2);
+    sky.render(0);
+    const eco = { quality: "eco", out: [120, 60], sky: [36, 18], scene: [60, 30] };
+    expect(sky.stats()).toMatchObject(eco);
+    const ext = loseContextExt(gl);
+    ext.loseContext();
+    await next(sky, "contextlost");
+    await wait(0);
+    ext.restoreContext();
+    await next(sky, "contextrestored");
+    sky.render(1);
+    expect(sky.stats()).toMatchObject(eco);
+    expect([canvas.width, canvas.height]).toEqual([120, 60]);
+    expect(nonBlack(readPixels(gl))).toBe(120 * 60);
+  });
+
   it("resumes the running loop after a restore", async () => {
     const display = new Display().install();
     const { sky, gl, frames } = makeSky({ ...PARAMS, motion: "full" });
@@ -328,5 +347,75 @@ describe("dispose", () => {
     const lostEvent = nextCanvasEvent(canvas, "webglcontextlost");
     loseContextExt(gl).loseContext();
     expect((await lostEvent).defaultPrevented).toBe(false);
+  });
+});
+
+describe("tier switches", () => {
+  it("drop the GPU-time average when the quality changes, and only then", async () => {
+    const { sky } = makeSky({ ...PARAMS, quality: "auto" }, fakeTimer);
+    await next(sky, "ready");
+    sky.resize(32, 20, 1);
+    sky.render(0);
+    expect(sky.stats().gpuMs).toBe(3);
+    sky.update({ hour: 14 });
+    expect(sky.stats().gpuMs).toBe(3);
+    // Fixed tiers time nothing, so "auto" would otherwise come back to judge its tier on the old tier's cost.
+    for (const quality of ["eco", "high", "auto"] as const) {
+      sky.update({ quality });
+      expect(sky.stats().gpuMs, quality).toBe(-1);
+      sky.render(1);
+    }
+    expect(sky.stats().gpuMs).toBe(3);
+  });
+
+  it("resize the render targets in place, creating no GPU object, to and from eco", async () => {
+    const created: string[] = [];
+    const sizes: string[] = [];
+    const { sky } = makeSky({ ...PARAMS, scene: "rainy", motion: "full", quality: "eco" }, (gl) => {
+      for (const name of [
+        "createTexture",
+        "createFramebuffer",
+        "createBuffer",
+        "createVertexArray",
+      ]) {
+        const original: unknown = Reflect.get(gl, name);
+        if (typeof original !== "function") throw new Error(`no ${name}`);
+        Reflect.set(gl, name, (...args: unknown[]): unknown => {
+          created.push(name);
+          return Reflect.apply(original, gl, args);
+        });
+      }
+      const texImage2D = gl.texImage2D.bind(gl);
+      vi.spyOn(gl, "texImage2D").mockImplementation((...args: unknown[]) => {
+        if (args[8] === null) sizes.push(`${String(args[3])}x${String(args[4])}`);
+        Reflect.apply(texImage2D, gl, args);
+      });
+    });
+    await next(sky, "ready");
+    sky.probe(false);
+    sky.resize(160, 80, 2);
+    sky.render(0);
+    const objects = created.length;
+    // Eco at ratio 2 caps the canvas at 120×60: sky and rays 36×18, scene 60×30.
+    expect(sizes.splice(0)).toEqual(["36x18", "36x18", "60x30"]);
+    let t = 0;
+    const frame = (): void => {
+      t += 1 / 60;
+      sky.render(t);
+    };
+    frame();
+    expect(sizes).toEqual([]);
+    for (const [quality, expected] of [
+      ["high", ["120x60", "120x60", "240x120"]],
+      ["eco", ["36x18", "36x18", "60x30"]],
+      ["auto", ["72x36", "72x36", "120x60"]],
+      ["eco", ["36x18", "36x18", "60x30"]],
+    ] as const) {
+      sky.update({ quality });
+      frame();
+      frame();
+      expect(sizes.splice(0), quality).toEqual(expected);
+    }
+    expect(created).toHaveLength(objects);
   });
 });

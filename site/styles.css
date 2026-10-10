@@ -12,6 +12,19 @@
   initial-value: #f3f5f9;
 }
 
+/* How much of the word beside a value an arrow's fade takes away, 0 to 1 on each side; registered so it animates. */
+@property --erase-l {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+
+@property --erase-r {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+
 @property --veil {
   syntax: "<color>";
   inherits: true;
@@ -93,7 +106,7 @@ a {
 
 /* Rings are for the keyboard: after a press or a drag they stay hidden until the next key. */
 :root[data-input="pointer"] :focus-visible,
-:root[data-input="pointer"] .choice label:has(:focus-visible) {
+:root[data-input="pointer"] .seg label:has(:focus-visible) {
   outline: none;
 }
 
@@ -247,6 +260,11 @@ a {
 /* --------------------------------------------------------------- report */
 
 .report {
+  --prose-size: clamp(1.4rem, 0.95rem + 1.5vw, 2.5rem);
+  /* A value's arrows and fades come in easing out and go easing in, and start going the moment it is left. */
+  --show: 180ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  --hide: 140ms cubic-bezier(0.3, 0, 1, 1);
+  position: relative;
   align-self: end;
   text-shadow: 0 0 32px color-mix(in srgb, var(--paper) 40%, transparent);
 }
@@ -260,12 +278,74 @@ a {
   touch-action: none;
 }
 
+/*
+ * The sentence carries a mask that fades the words either side of the value whose arrows are showing: two strictly
+ * horizontal ramps of opacity, laid at the value's edges on its line, are taken out of an otherwise solid mask. The
+ * words go from fully there to gone toward each arrow, over the live sky, with nothing painted behind the arrows.
+ * Report sets where the value stands (--at-l, --at-r, --at-t, --at-h, from its box) and --erase-l and --erase-r
+ * sweep each ramp in and out. The sentence bleeds 40px past its text so the mask clips none of its glow.
+ * Report sets --at-* and data-mask; it takes data-mask off once the fades have gone out.
+ */
 .prose {
-  max-width: 24.5em;
-  margin: 0;
-  font: 400 clamp(1.4rem, 0.95rem + 1.5vw, 2.5rem) / 1.17 var(--serif);
+  --bleed: 40px;
+  --ramp: 1.45em;
+  --ramp-mask:
+    linear-gradient(#000 0 0),
+    linear-gradient(to right, transparent, rgb(0 0 0 / var(--erase-l)) calc(100% - 0.5em)),
+    linear-gradient(to left, transparent, rgb(0 0 0 / var(--erase-r)) calc(100% - 0.5em));
+  --ramp-size: 100% 100%, var(--ramp) var(--at-h, 0px), var(--ramp) var(--at-h, 0px);
+  --ramp-at:
+    0 0, calc(var(--at-l, 0px) - var(--ramp)) var(--at-t, 0px),
+    calc(var(--at-r, 0px) + 0.04em) var(--at-t, 0px);
+  max-width: calc(24.5em + 2 * var(--bleed));
+  margin: calc(-1 * var(--bleed));
+  padding: var(--bleed);
+  font: 400 var(--prose-size) / 1.17 var(--serif);
   letter-spacing: -0.006em;
   text-wrap: pretty;
+  transition:
+    --erase-l var(--hide),
+    --erase-r var(--hide);
+}
+
+/* The mask is there only while a value is in reach and while its fades go out, so at rest the sentence has none. */
+.prose[data-mask] {
+  -webkit-mask-image: var(--ramp-mask);
+  mask-image: var(--ramp-mask);
+  -webkit-mask-size: var(--ramp-size);
+  mask-size: var(--ramp-size);
+  -webkit-mask-position: var(--ramp-at);
+  mask-position: var(--ramp-at);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-composite: source-out, source-over, source-over;
+  mask-composite: subtract, add, add;
+}
+
+.prose[data-reach] {
+  --erase-l: 1;
+  --erase-r: 1;
+  transition:
+    --erase-l var(--show),
+    --erase-r var(--show);
+}
+
+/* No arrow points past an end, so nothing fades there. */
+.prose[data-end="low"] {
+  --erase-l: 0;
+}
+
+.prose[data-end="high"] {
+  --erase-r: 0;
+}
+
+/* With Tune open beside it, the sentence draws in so the pane covers none of its values. */
+@media (min-width: 761px) {
+  :root:has(#panel:not([hidden])) .prose {
+    max-width: calc(
+      max(12em, min(24.5em, calc(100vw - 2 * var(--gutter) - 432px))) + 2 * var(--bleed)
+    );
+  }
 }
 
 [data-text="daypart"] {
@@ -276,9 +356,14 @@ a {
   color: var(--ink-2);
 }
 
-/* A value you can drag. Italic and a dotted rule mark it; chevrons appear when it is in reach. */
+/*
+ * A value you click to step and drag to scrub. Italic and a dotted rule mark it. In reach, an arrow stands either
+ * side over a fade of the neighbouring words; the bright arrow points the way a click goes, and none points past an
+ * end. An inline block, because touch-action passes over plain inline boxes: a sideways drag on touch scrubs and
+ * never pans.
+ */
 .token {
-  position: relative;
+  display: inline-block;
   font-style: italic;
   white-space: nowrap;
   cursor: ew-resize;
@@ -290,45 +375,110 @@ a {
   transition: text-decoration-color 0.2s;
 }
 
-.token[data-key="scene"] {
-  cursor: pointer;
-}
-
-.token::before,
-.token::after {
-  position: absolute;
-  top: 50%;
-  font: 400 0.55em/1 var(--sans);
-  opacity: 0;
-  translate: 0 -40%;
-  transition:
-    opacity 0.2s,
-    translate 0.2s var(--ease);
-  pointer-events: none;
-}
-
-.token::before {
-  content: "‹";
-  left: -0.62em;
-}
-
-.token::after {
-  content: "›";
-  right: -0.62em;
-}
-
-.token:is(:hover, :focus-visible, [data-active]) {
+.token:is([data-active], [data-shown], [data-reach]),
+:root:not([data-input="pointer"]) .token:focus-visible {
   text-decoration-style: solid;
   text-decoration-color: var(--ink);
 }
 
-.token:is(:hover, :focus-visible, [data-active])::before,
-.token:is(:hover, :focus-visible, [data-active])::after {
-  opacity: 0.6;
-}
-
 .token:focus-visible {
   outline: none;
+}
+
+/*
+ * The two arrows, one pair for the whole sentence, laid by Report beside the value in reach: --l and --r are its
+ * edges and --y its middle, in the report's own box. They sit outside the sentence, so its mask never fades them.
+ */
+.nudges {
+  position: absolute;
+  inset: 0;
+  font-size: var(--prose-size);
+  pointer-events: none;
+}
+
+/*
+ * Each arrow is a small glyph in a hit area of at least 24px square that reaches to the value's edge, so the pointer
+ * passes from value to arrow without leaving both. Hidden, an arrow waits a little in toward the value (--push) and
+ * slides out as it appears; the one pointing the way a click goes leans out a little further.
+ */
+.nudges span {
+  --off: max(0.55em, 13px);
+  --push: -0.3em;
+  position: absolute;
+  top: var(--y, 0px);
+  display: grid;
+  place-items: center;
+  min-width: 24px;
+  min-height: 24px;
+  font: 500 0.6em/1 var(--sans);
+  color: var(--ink-2);
+  opacity: 0;
+  cursor: pointer;
+  /* Going, an arrow fades where it stands, and only once unseen steps back in, so it never passes over a word. */
+  transition:
+    opacity var(--hide),
+    translate 0s linear 140ms,
+    color 0.2s;
+}
+
+/* The hit area overlaps the value by a few pixels, so there is no gap to cross between them. */
+.nudges span::before {
+  content: "";
+  position: absolute;
+  inset: 0 -3px;
+}
+
+.nudges [data-way="back"]::before {
+  right: -8px;
+}
+
+.nudges [data-way="on"]::before {
+  left: -8px;
+}
+
+/* Kept inside the viewport (--vl and --vr are its edges in the report's box), so a value at a line's start or end
+   still has its arrow on screen. */
+.nudges [data-way="back"] {
+  left: max(var(--l, 0px), calc(var(--vl, -100vw) + 12px + var(--off)));
+  translate: calc(-50% - var(--off) - var(--push)) -50%;
+}
+
+.nudges [data-way="on"] {
+  left: min(var(--r, 0px), calc(var(--vr, 200vw) - 12px - var(--off)));
+  translate: calc(-50% + var(--off) + var(--push)) -50%;
+}
+
+.nudges[data-reach] span {
+  --push: 0em;
+  opacity: 1;
+  transition:
+    opacity var(--show),
+    translate var(--show),
+    color 0.2s;
+}
+
+/* Only a hovering pointer can click an arrow: arrows lingering after a touch take no presses. */
+@media (hover: hover) {
+  .nudges[data-reach]:not([data-touch]) span {
+    pointer-events: auto;
+  }
+}
+
+/* The way a click goes: bright, and leaning that way. */
+.nudges[data-heading="down"] [data-way="back"],
+.nudges[data-heading="up"] [data-way="on"] {
+  color: var(--ink);
+}
+
+.nudges[data-reach][data-heading="down"] [data-way="back"],
+.nudges[data-reach][data-heading="up"] [data-way="on"] {
+  --push: 0.14em;
+}
+
+.nudges[data-end="low"] [data-way="back"],
+.nudges[data-end="high"] [data-way="on"] {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .moon {
@@ -551,32 +701,49 @@ a {
 
 /* ---------------------------------------------------------------- panel */
 
+/*
+ * Tune rises out of the gear: a pane of frosted paper in the page's own voice. A serif title and a line of prose,
+ * then three groups, each a serif name and what it is for. Every row reads label, then the attribute it writes in
+ * the snippet's mono, then the control and its value in the sentence's italic.
+ */
 .panel {
   position: fixed;
   right: max(var(--gutter), env(safe-area-inset-right));
   bottom: calc(max(calc(var(--gutter) * 0.6), env(safe-area-inset-bottom)) + 56px);
   z-index: 3;
-  width: min(340px, calc(100vw - 2 * var(--gutter)));
-  max-height: calc(100dvh - 160px);
+  width: min(400px, calc(100vw - 2 * var(--gutter)));
+  max-height: calc(100dvh - 150px);
   overflow-y: auto;
-  padding: 16px 18px 14px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: color-mix(in srgb, var(--paper) 66%, transparent);
-  backdrop-filter: blur(24px) saturate(1.4);
-  -webkit-backdrop-filter: blur(24px) saturate(1.4);
-  box-shadow: 0 30px 80px -30px rgb(0 0 0 / 0.4);
+  overscroll-behavior: contain;
+  padding: 20px 22px 16px;
+  border: 1px solid color-mix(in srgb, var(--ink) 13%, transparent);
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--paper) 80%, transparent);
+  backdrop-filter: blur(28px) saturate(1.5);
+  -webkit-backdrop-filter: blur(28px) saturate(1.5);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 28%, transparent),
+    0 40px 90px -40px rgb(0 0 0 / 0.5);
   color: var(--ink);
   scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+  container-type: inline-size;
+  transform-origin: calc(100% - 17px) calc(100% + 39px);
   transition:
-    opacity 0.25s var(--ease),
-    translate 0.25s var(--ease),
-    display 0.25s allow-discrete;
+    opacity 0.28s var(--ease),
+    scale 0.42s var(--ease),
+    translate 0.42s var(--ease),
+    display 0.42s allow-discrete;
+}
+
+.panel:focus-visible {
+  outline: none;
 }
 
 @starting-style {
   .panel:not([hidden]) {
     opacity: 0;
+    scale: 0.94;
     translate: 0 10px;
   }
 }
@@ -584,84 +751,155 @@ a {
 .panel[hidden] {
   display: none;
   opacity: 0;
-  translate: 0 10px;
+  scale: 0.97;
+  translate: 0 6px;
+}
+
+/* The groups follow the pane in, one after another. */
+.panel :is(.group, .panel-foot) {
+  transition:
+    opacity 0.45s var(--ease),
+    translate 0.55s var(--ease);
+  transition-delay: calc(70ms + var(--i, 0) * 55ms);
+}
+
+@starting-style {
+  .panel:not([hidden]) :is(.group, .panel-foot) {
+    opacity: 0;
+    translate: 0 12px;
+  }
 }
 
 .panel-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 4px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  column-gap: 12px;
+  padding-bottom: 12px;
 }
 
 .panel h2 {
   margin: 0;
-  font: italic 400 26px/1 var(--serif);
+  font: italic 400 34px/0.95 var(--serif);
+  letter-spacing: -0.01em;
+}
+
+.lede {
+  grid-column: 1;
+  margin: 6px 0 0;
+  font: 400 17px/1.2 var(--serif);
+  color: var(--ink-2);
 }
 
 .close {
-  width: 28px;
-  height: 28px;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin: -4px -6px 0 0;
   border-radius: 50%;
-  font-size: 20px;
-  line-height: 1;
   color: var(--ink-2);
+  transition:
+    color 0.2s,
+    background-color 0.2s,
+    rotate 0.35s var(--ease);
+}
+
+.close svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
 }
 
 .close:hover {
   background: var(--wash);
   color: var(--ink);
+  rotate: 90deg;
 }
 
-.panel section {
+.group {
   padding: 12px 0 6px;
-  border-bottom: 1px solid var(--line);
+  border-top: 1px solid var(--line);
 }
 
-.panel h3,
-.choice legend {
-  margin: 0 0 6px;
-  font: 500 10.5px/1.4 var(--mono);
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--ink-3);
+.group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 4px;
 }
 
+.group h3 {
+  margin: 0;
+  font: italic 400 23px/1 var(--serif);
+}
+
+.group-head p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.3;
+  text-align: right;
+  color: var(--ink-2);
+}
+
+/* Label, control, value: one line each. */
 .row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 7.4rem minmax(0, 1fr) minmax(3.4rem, auto);
   align-items: center;
-  column-gap: 12px;
-  padding: 5px 0 2px;
+  column-gap: 14px;
+  min-height: 34px;
+  margin: 0;
+  padding: 0;
+  border: 0;
   font-size: 13.5px;
+  transition: opacity 0.3s var(--ease);
+}
+
+.row label,
+.row .legend {
+  line-height: 1.25;
 }
 
 .row output {
-  font: 400 12px/1 var(--mono);
+  font: italic 400 20px/1 var(--serif);
   font-variant-numeric: tabular-nums;
-  color: var(--ink-2);
+  white-space: nowrap;
+  text-align: right;
 }
 
 .row .value {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
 }
 
-.row input[type="range"] {
-  grid-column: 1 / -1;
+/* Glass focus says nothing without the glass. */
+.row[data-off] {
+  opacity: 0.38;
 }
 
-.row.is-switch {
-  padding: 8px 0 6px;
+.row.is-switch input {
+  grid-column: 3;
+  justify-self: end;
 }
 
 .chip {
   padding: 3px 8px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  font: 400 11px/1 var(--mono);
-  color: var(--ink-3);
+  font: 400 10.5px/1 var(--mono);
+  color: var(--ink-2);
+  transition:
+    color 0.2s,
+    background-color 0.2s,
+    border-color 0.2s;
 }
 
 .chip[aria-pressed="true"] {
@@ -673,7 +911,7 @@ a {
 input[type="range"] {
   --fill: 50%;
   width: 100%;
-  height: 22px;
+  height: 26px;
   margin: 0;
   background: transparent;
   appearance: none;
@@ -692,12 +930,13 @@ input[type="range"]::-webkit-slider-thumb {
   margin-top: -6px;
   border-radius: 50%;
   background: var(--ink);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--paper) 70%, transparent);
   appearance: none;
-  transition: scale 0.15s var(--ease);
+  transition: scale 0.2s var(--ease);
 }
 
-input[type="range"]:active::-webkit-slider-thumb {
-  scale: 1.25;
+input[type="range"]:is(:hover, :active)::-webkit-slider-thumb {
+  scale: 1.2;
 }
 
 input[type="range"]::-moz-range-track {
@@ -718,6 +957,12 @@ input[type="range"]::-moz-range-thumb {
   border: 0;
   border-radius: 50%;
   background: var(--ink);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--paper) 70%, transparent);
+  transition: scale 0.2s var(--ease);
+}
+
+input[type="range"]:is(:hover, :active)::-moz-range-thumb {
+  scale: 1.2;
 }
 
 input[type="range"][data-auto] {
@@ -726,26 +971,26 @@ input[type="range"][data-auto] {
 
 input[type="checkbox"][role="switch"] {
   position: relative;
-  width: 32px;
-  height: 18px;
+  width: 34px;
+  height: 20px;
   margin: 0;
   border-radius: 999px;
   background: var(--line);
   appearance: none;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: background-color 0.25s var(--ease);
 }
 
 input[type="checkbox"][role="switch"]::after {
   content: "";
   position: absolute;
-  top: 2px;
-  left: 2px;
+  top: 3px;
+  left: 3px;
   width: 14px;
   height: 14px;
   border-radius: 50%;
   background: var(--paper);
-  transition: translate 0.2s var(--ease);
+  transition: translate 0.3s var(--ease);
 }
 
 input[type="checkbox"][role="switch"]:checked {
@@ -756,59 +1001,130 @@ input[type="checkbox"][role="switch"]:checked::after {
   translate: 14px 0;
 }
 
-.choice {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 4px;
-  margin: 0;
-  padding: 2px 0 8px;
-  border: 0;
+/* A choice is a segmented control: a pill slides under the checked option. */
+/* A choice's label takes only its own width, leaving the rest of the line to the control. */
+.row.choice {
+  grid-template-columns: auto minmax(0, 1fr);
 }
 
-.choice legend {
-  float: left;
-  width: 100%;
-  margin-bottom: 2px;
-}
-
-.choice label {
+.seg {
+  --x: 0px;
+  --w: 0px;
   position: relative;
-  padding: 4px 9px;
+  grid-column: 2;
+  justify-self: end;
+  display: inline-flex;
+  padding: 3px;
   border-radius: 999px;
-  font-size: 13px;
-  color: var(--ink-3);
-  cursor: pointer;
-  transition:
-    color 0.2s,
-    background-color 0.2s;
-}
-
-.choice label:hover {
-  color: var(--ink);
-}
-
-.choice label:has(:checked) {
   background: var(--wash);
+}
+
+.seg::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  width: var(--w);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  box-shadow: 0 1px 3px -1px rgb(0 0 0 / 0.25);
+  translate: var(--x) 0;
+  opacity: 0;
+  transition:
+    translate 0.38s var(--ease),
+    width 0.38s var(--ease),
+    opacity 0.2s;
+}
+
+.seg[data-placed]::before {
+  opacity: 1;
+}
+
+.seg label {
+  position: relative;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  line-height: 1.3;
+  color: var(--ink-2);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.seg label:hover,
+.seg label:has(:checked) {
   color: var(--ink);
 }
 
-.choice label:has(:focus-visible) {
-  outline: 1.5px solid var(--ink);
+/* Before the pill has measured its place, the checked option carries its own. */
+.seg:not([data-placed]) label:has(:checked) {
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
 }
 
-.choice input {
+.seg label:has(:focus-visible) {
+  outline: 1.5px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.seg input {
   position: absolute;
   opacity: 0;
   pointer-events: none;
 }
 
+/* A narrow pane stacks each control under its label. */
+@container (width < 340px) {
+  .row:not(.is-switch) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 2px;
+    padding: 8px 0 4px;
+  }
+
+  .row input[type="range"] {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .seg {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-self: start;
+    margin-top: 6px;
+  }
+}
+
 .panel-foot {
+  margin-top: 6px;
   padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.meter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+/* The stats are live: a dot breathes while they update. */
+.pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-2);
+  animation: pulse 2s var(--ease) infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.25;
+    scale: 0.7;
+  }
 }
 
 #stats {
-  display: block;
   font: 400 11.5px/1.5 var(--mono);
   color: var(--ink-2);
   font-variant-numeric: tabular-nums;
@@ -818,7 +1134,7 @@ input[type="checkbox"][role="switch"]:checked::after {
   margin: 8px 0 0;
   font-size: 11.5px;
   line-height: 1.9;
-  color: var(--ink-3);
+  color: var(--ink-2);
 }
 
 kbd {
@@ -830,78 +1146,6 @@ kbd {
   font: 400 10.5px/1.5 var(--mono);
   text-align: center;
   color: var(--ink-2);
-}
-
-/* ----------------------------------------------------------------- menu */
-
-.menu {
-  position: fixed;
-  inset: auto;
-  margin: 0;
-  padding: 6px;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--paper) 72%, transparent);
-  backdrop-filter: blur(24px) saturate(1.4);
-  -webkit-backdrop-filter: blur(24px) saturate(1.4);
-  box-shadow: 0 30px 80px -30px rgb(0 0 0 / 0.45);
-  color: var(--ink);
-  transition:
-    opacity 0.2s var(--ease),
-    translate 0.2s var(--ease),
-    overlay 0.2s allow-discrete,
-    display 0.2s allow-discrete;
-}
-
-.menu:not(:popover-open) {
-  opacity: 0;
-  translate: 0 6px;
-}
-
-@starting-style {
-  .menu:popover-open {
-    opacity: 0;
-    translate: 0 6px;
-  }
-}
-
-.menu button {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 28px;
-  width: 100%;
-  padding: 5px 12px 6px;
-  border-radius: 10px;
-  font: italic 400 24px/1.1 var(--serif);
-  color: var(--ink-2);
-  text-align: left;
-}
-
-.menu button:is(:hover, :focus-visible) {
-  background: var(--wash);
-  color: var(--ink);
-  outline: none;
-}
-
-.menu button[aria-checked="true"] {
-  color: var(--ink);
-}
-
-.menu button[aria-checked="true"]::before {
-  content: "";
-  position: absolute;
-  margin: 0.48em 0 0 -9px;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--ink);
-}
-
-.menu kbd {
-  border: 0;
-  font-style: normal;
-  color: var(--ink-3);
 }
 
 /* -------------------------------------------------------------- readout */
@@ -921,6 +1165,14 @@ kbd {
   opacity: 0;
   translate: -50% calc(-100% - 10px);
   transition: opacity 0.15s;
+}
+
+.readout[data-side="left"] {
+  translate: calc(-100% - 12px) -50%;
+}
+
+.readout[data-side="on"] {
+  translate: -6px -50%;
 }
 
 .readout.is-on {
@@ -945,8 +1197,8 @@ kbd {
     font-size: clamp(4.5rem, 24vw, 7.5rem);
   }
 
-  .prose {
-    font-size: clamp(1.3rem, 5.6vw, 1.65rem);
+  .report {
+    --prose-size: clamp(1.3rem, 5.6vw, 1.65rem);
   }
 
   .dock {
@@ -984,6 +1236,10 @@ kbd {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .pulse {
+    animation: none;
+  }
+
   *,
   *::before,
   *::after {

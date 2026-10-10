@@ -88,6 +88,16 @@ describe.skipIf(server.browser !== "chromium")("per-frame allocation", () => {
     expect(bytes).toBeLessThan(BUDGET_BYTES_PER_FRAME);
   });
 
+  it("stays within the budget in eco, and while switching to and from it", async () => {
+    const sky = await ready({ scene: "storm", hour: 17.5, motion: "full", quality: "eco" });
+    expect(await bytesPerFrame((i) => sky.render(i / 60))).toBeLessThan(BUDGET_BYTES_PER_FRAME);
+    const bytes = await bytesPerFrame((i) => {
+      if (i % 60 === 0) sky.update({ quality: i % 120 === 0 ? "high" : "eco" });
+      sky.render(i / 60);
+    });
+    expect(bytes).toBeLessThan(BUDGET_BYTES_PER_FRAME);
+  });
+
   it("stays within the budget with a settled blur", async () => {
     const sky = await ready({ scene: "rainy", hour: 10, motion: "full", blur: 12 });
     const bytes = await bytesPerFrame((i) => sky.render(i / 60));

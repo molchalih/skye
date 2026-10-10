@@ -53,14 +53,13 @@ const readout = createReadout($("#readout"));
 const report = createReport({
   store,
   readout,
-  onScrub: (key, active) => {
-    if (!active) return;
+  onChange: (key) => {
     dismissHint();
     if (key === "hour") play(false);
   },
 });
 const snippet = createSnippet(() => store.get());
-const tune = createTune({ store, stats: () => sky.stats() });
+const tune = createTune({ store, readout, stats: () => sky.stats() });
 
 let frame = 0;
 let ink = luminance(shown(store.get())) < (LIGHT_INK_BELOW + DARK_INK_ABOVE) / 2 ? "light" : "dark";
@@ -310,7 +309,7 @@ document.addEventListener("keydown", (e) => {
       break;
     case "t":
     case "T":
-      tune.show();
+      tune.show(undefined, true);
       break;
     case "Escape":
       if (!tune.open) return;

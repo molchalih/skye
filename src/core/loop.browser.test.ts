@@ -195,6 +195,24 @@ describe("Sky loop", () => {
     expect(sky.stats()).toMatchObject({ quality: "low", tier: 0, fpsCap: 30 });
   });
 
+  it("keeps eco on slow frames, and auto resumes from the controller's last tier", async () => {
+    const display = new Display().install();
+    const { sky } = await readySky({ ...MOTION, quality: "auto" });
+    sky.probe(false);
+    const changes: TierChange[] = [];
+    sky.on("tierchange", (c) => changes.push(c));
+    sky.start();
+    for (let i = 0; i < 91; i++) display.tick(100);
+    expect(changes).toEqual([{ quality: "low", tier: 0 }]);
+    sky.update({ quality: "eco" });
+    for (let i = 0; i < 200; i++) display.tick(100);
+    expect(sky.stats()).toMatchObject({ quality: "eco", auto: false, tier: 0, fpsCap: 20 });
+    sky.update({ quality: "auto" });
+    display.tick(100);
+    expect(sky.stats()).toMatchObject({ quality: "low", auto: true, tier: 0 });
+    expect(changes).toHaveLength(1);
+  });
+
   it("keeps a fixed tier on slow frames", async () => {
     const display = new Display().install();
     const { sky } = await readySky();

@@ -97,7 +97,7 @@ function toError(value: unknown): Error {
  * @attr {number} [focus-depth=0.45] - Glass focus depth, clamped to 0.12-1.
  * @attr {number} [exposure=1] - Overall brightness, clamped to 0.2-1.2.
  * @attr {number} [blur-radius=0] - Background blur in CSS px, clamped to 0-64.
- * @attr {"auto" | "low" | "balanced" | "high"} [quality=auto] - Quality tier; `auto` adapts to frame time, unknown values are `balanced`.
+ * @attr {"auto" | "eco" | "low" | "balanced" | "high"} [quality=auto] - Quality tier; `auto` adapts to frame time among `low`, `balanced` and `high`, `eco` is a fixed tier below `low` that `auto` never picks, unknown values are `balanced`.
  * @attr {"auto" | "full" | "static"} [motion=auto] - `static` draws one frame per change; `auto` follows prefers-reduced-motion.
  * @attr {boolean | string} worker - Render in a dedicated worker; a non-empty value is the URL of the worker module to load instead of skye's own.
  * @fires {CustomEvent<null>} skye-ready - Programs are linked and the sky is drawing.
@@ -105,7 +105,7 @@ function toError(value: unknown): Error {
  * @fires {CustomEvent<null>} skye-contextlost - The WebGL context was lost; drawing stopped.
  * @fires {CustomEvent<null>} skye-contextrestored - Drawing again after a context loss.
  * @fires {CustomEvent<null>} skye-fallback - WebGL2 is unavailable; the fallback gradient is shown for good.
- * @fires {CustomEvent<TierChange>} skye-tierchange - The automatic quality tier changed; `detail` is the new tier.
+ * @fires {CustomEvent<TierChange>} skye-tierchange - The automatic quality tier changed (`quality="auto"` only); `detail` is the new tier.
  */
 export class SkyeElement extends ElementBase {
   /**

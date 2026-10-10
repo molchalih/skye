@@ -66,6 +66,9 @@
             <path />
           </svg>
         </p>
+        <div class="nudges" id="nudges" aria-hidden="true">
+          <span data-way="back">‹</span><span data-way="on">›</span>
+        </div>
       </main>
 
       <div class="ruler" id="ruler" role="slider" tabindex="0" aria-label="Time of day">
@@ -137,76 +140,121 @@
       </footer>
     </div>
 
-    <aside class="panel" id="panel" aria-labelledby="panel-title" hidden>
+    <aside
+      class="panel"
+      id="panel"
+      role="dialog"
+      aria-labelledby="panel-title"
+      aria-describedby="panel-lede"
+      tabindex="-1"
+      hidden
+    >
       <header class="panel-head">
         <h2 id="panel-title">Tune</h2>
-        <button type="button" class="close" data-close aria-label="Close">×</button>
+        <p class="lede" id="panel-lede">The attributes the sentence leaves out.</p>
+        <button type="button" class="close" data-close aria-label="Close">
+          <svg viewBox="-6 -6 12 12" aria-hidden="true"><path d="M-4 -4 L4 4 M4 -4 L-4 4" /></svg>
+        </button>
       </header>
 
-      <section>
-        <h3>Air</h3>
-        <div class="row">
+      <section class="group" style="--i: 0" aria-labelledby="g-air">
+        <header class="group-head">
+          <h3 id="g-air">Air</h3>
+          <p>how the clouds drift, and when the sun peaks</p>
+        </header>
+        <div class="row" data-attribute="wind">
           <label for="t-wind">Wind</label>
-          <span class="value">
-            <output data-for="wind"></output>
-            <button type="button" class="chip" data-auto="wind" aria-pressed="true">auto</button>
-          </span>
           <input id="t-wind" name="wind" type="range" min="0" max="6" step="0.1" />
+          <span class="value">
+            <output data-for="wind" for="t-wind"></output>
+            <button
+              type="button"
+              class="chip"
+              data-auto="wind"
+              aria-pressed="true"
+              aria-label="Auto wind"
+            >
+              auto
+            </button>
+          </span>
         </div>
-        <div class="row">
+        <div class="row" data-attribute="seed">
           <label for="t-seed">Cloud pattern</label>
-          <output data-for="seed"></output>
           <input id="t-seed" name="seed" type="range" min="0" max="40" step="0.01" />
+          <output data-for="seed" for="t-seed"></output>
         </div>
-        <div class="row">
+        <div class="row" data-attribute="solar-noon">
           <label for="t-noon">Solar noon</label>
-          <output data-for="solarNoon"></output>
           <input id="t-noon" name="solarNoon" type="range" min="10.5" max="15" step="0.05" />
+          <output data-for="solarNoon" for="t-noon"></output>
         </div>
       </section>
 
-      <section>
-        <h3>Lens</h3>
-        <div class="row is-switch">
+      <section class="group" style="--i: 1" aria-labelledby="g-lens">
+        <header class="group-head">
+          <h3 id="g-lens">Lens</h3>
+          <p>what you look at the sky through</p>
+        </header>
+        <div class="row is-switch" data-attribute="glass">
           <label for="t-glass">Window glass</label>
           <input id="t-glass" name="glass" type="checkbox" role="switch" />
         </div>
-        <div class="row">
+        <div class="row" data-needs="glass" data-attribute="focus-depth">
           <label for="t-focus">Glass focus</label>
-          <output data-for="focus"></output>
           <input id="t-focus" name="focus" type="range" min="0.12" max="1" step="0.01" />
+          <output data-for="focus" for="t-focus"></output>
         </div>
-        <div class="row">
+        <div class="row" data-attribute="exposure">
           <label for="t-exposure">Exposure</label>
-          <output data-for="exposure"></output>
           <input id="t-exposure" name="exposure" type="range" min="0.2" max="1.2" step="0.01" />
+          <output data-for="exposure" for="t-exposure"></output>
         </div>
-        <div class="row">
+        <div class="row" data-attribute="blur-radius">
           <label for="t-blur">Background blur</label>
-          <output data-for="blur"></output>
           <input id="t-blur" name="blur" type="range" min="0" max="64" step="1" />
+          <output data-for="blur" for="t-blur"></output>
         </div>
       </section>
 
-      <section>
-        <h3>Renderer</h3>
-        <fieldset class="choice">
-          <legend>Quality</legend>
-          <label><input type="radio" name="quality" value="auto" />auto</label>
-          <label><input type="radio" name="quality" value="low" />low</label>
-          <label><input type="radio" name="quality" value="balanced" />balanced</label>
-          <label><input type="radio" name="quality" value="high" />high</label>
-        </fieldset>
-        <fieldset class="choice">
-          <legend>Motion</legend>
-          <label><input type="radio" name="motion" value="auto" />auto</label>
-          <label><input type="radio" name="motion" value="full" />full</label>
-          <label><input type="radio" name="motion" value="static" />static</label>
-        </fieldset>
+      <section class="group" style="--i: 2" aria-labelledby="g-renderer">
+        <header class="group-head">
+          <h3 id="g-renderer">Renderer</h3>
+          <p>how hard this device works</p>
+        </header>
+        <div
+          class="row choice"
+          role="radiogroup"
+          aria-labelledby="t-quality"
+          data-attribute="quality"
+        >
+          <span class="legend" id="t-quality">Quality</span>
+          <span class="seg">
+            <label><input type="radio" name="quality" value="auto" />auto</label>
+            <label><input type="radio" name="quality" value="eco" />eco</label>
+            <label><input type="radio" name="quality" value="low" />low</label>
+            <label><input type="radio" name="quality" value="balanced" />balanced</label>
+            <label><input type="radio" name="quality" value="high" />high</label>
+          </span>
+        </div>
+        <div
+          class="row choice"
+          role="radiogroup"
+          aria-labelledby="t-motion"
+          data-attribute="motion"
+        >
+          <span class="legend" id="t-motion">Motion</span>
+          <span class="seg">
+            <label><input type="radio" name="motion" value="auto" />auto</label>
+            <label><input type="radio" name="motion" value="full" />full</label>
+            <label><input type="radio" name="motion" value="static" />static</label>
+          </span>
+        </div>
       </section>
 
-      <footer class="panel-foot">
-        <output id="stats">starting…</output>
+      <footer class="panel-foot" style="--i: 3">
+        <p class="meter">
+          <span class="pulse" aria-hidden="true"></span><output id="stats">starting…</output>
+        </p>
         <p class="keys">
           <kbd>Space</kbd> play · <kbd>←</kbd><kbd>→</kbd> time · <kbd>↑</kbd><kbd>↓</kbd> clouds ·
           <kbd>1</kbd>–<kbd>8</kbd> weather · <kbd>S</kbd> shuffle
@@ -214,7 +262,6 @@
       </footer>
     </aside>
 
-    <div class="menu" id="scene-menu" popover role="menu" aria-label="Weather"></div>
     <div class="readout" id="readout" aria-hidden="true"></div>
 
     <noscript><p class="noscript">This page draws its sky with JavaScript and WebGL2.</p></noscript>

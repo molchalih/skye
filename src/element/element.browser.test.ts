@@ -134,6 +134,8 @@ describe("attributes", () => {
     expect(el.stats()).toMatchObject({ quality: "low", auto: false, static: true });
     el.setAttribute("quality", "high");
     expect(el.stats()).toMatchObject({ quality: "high", auto: false });
+    el.setAttribute("quality", "eco");
+    expect(el.stats()).toMatchObject({ quality: "eco", auto: false });
     el.removeAttribute("quality");
     expect(el.stats()).toMatchObject({ quality: "balanced", auto: true });
   });

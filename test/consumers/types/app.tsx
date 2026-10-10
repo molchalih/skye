@@ -1,6 +1,14 @@
 // What a TypeScript user of the published package writes, checked against the shipped declarations only.
 import { useRef, type ReactElement } from "react";
-import { createSky, DEFAULTS, ShaderError, type Sky, type SkyeStats, type Tier } from "@a240/skye";
+import {
+  createSky,
+  DEFAULTS,
+  ShaderError,
+  type AutoTier,
+  type Sky,
+  type SkyeStats,
+  type Tier,
+} from "@a240/skye";
 import { dayOfYear, moonPhase, solarPosition } from "@a240/skye/astro";
 import "@a240/skye/define";
 import {
@@ -23,9 +31,12 @@ const created: SkyeElement = document.createElement("skye-view");
 const found: SkyeElement | null = document.querySelector("skye-view");
 const stats: SkyeStats | null = created.stats();
 created.addEventListener("skye-tierchange", (event) => {
-  const tier: Tier = event.detail.quality;
-  return tier;
+  const tier: AutoTier = event.detail.quality;
+  const any: Tier = tier;
+  return any;
 });
+sky.update({ quality: "eco" });
+const fixed: Tier | undefined = stats?.quality;
 created.addEventListener(SKYE_READY, () => undefined);
 const ctor: typeof SkyeElement = defineSkye("my-sky");
 const generic: CustomElementConstructor = ctor;
@@ -42,8 +53,11 @@ export function App(): ReactElement {
       {/* @ts-expect-error attribute values are strings */}
       <skye-view scene={3} />
       <Skye scene="snowy" worker onReady={() => undefined} onTierChange={(change) => change.tier} />
+      <Skye quality="eco" />
+      {/* @ts-expect-error eco is the cheapest tier; there is none below it */}
+      <Skye quality="off" />
     </>
   );
 }
 
-export { attributes, ctor, elevation, failed, found, generic, scene, stats };
+export { attributes, ctor, elevation, failed, fixed, found, generic, scene, stats };

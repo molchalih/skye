@@ -19,8 +19,10 @@ export interface LoopClient {
 
 /**
  * v6's frame loop (`_loop`): one frame per display refresh, skipped while the
- * fps cap says it is too early (with 2 ms of slack, so a 30 fps cap holds on a
- * 60 Hz display), plus the CPU-time and fps meters. Frames come from the
+ * fps cap says it is too early, plus the CPU-time and fps meters. Under a cap
+ * it draws the frames v6 drew, the first at or past the cap's interval less
+ * 2 ms, but judges each by a threshold halfway between display frames, so
+ * timestamp jitter cannot move a frame across it. Frames come from the
  * global `requestAnimationFrame`, looked up at each request so a worker scope
  * without it falls back to a `setTimeout` pacer at the fps cap.
  *
@@ -38,10 +40,19 @@ export class FrameLoop {
   #hasOrigin = false;
   #origin = 0;
   #hasLast = false;
-  #last = 0;
+  #lastDrawn = 0;
   #fpsCount = 0;
   #hasFpsStart = false;
   #fpsStart = 0;
+  /** The previous frame's timestamp. */
+  #prevFrame = 0;
+  /**
+   * The display's frame interval in ms, smoothed over about 20 frames. It
+   * assumes each interval spans a whole number of display frames. From 16 ms,
+   * a display at 42 Hz or more measures its own interval; a slower one, or rAF
+   * slowed to 30 fps, measures a whole fraction of it, which paces the same.
+   */
+  #period = 16;
 
   constructor(client: LoopClient) {
     this.#client = client;
@@ -97,9 +108,29 @@ export class FrameLoop {
     }
     this.#request();
     const cap = client.fpsCap();
-    if (this.#hasLast && cap < 60 && now - this.#last < 1000 / cap - 2) return;
-    const dt = this.#hasLast ? Math.min(0.1, (now - this.#last) / 1000) : 1 / 60;
-    this.#last = now;
+    // Each interval counts as the nearest whole number of display frames: a missed vsync, a gap such as the first
+    // frame after a wake, or a timer tick moves the estimate by no more than its rounding.
+    const frameMs = now - this.#prevFrame;
+    this.#prevFrame = now;
+    if (frameMs > 0)
+      this.#period +=
+        (frameMs / Math.max(1, Math.round(frameMs / this.#period)) - this.#period) * 0.05;
+    // v6 drew the first display frame at or past the cap's interval less 2 ms: a fixed threshold, which can sit a
+    // fraction of a millisecond from a frame (0.5 ms at 165 Hz under 20 fps), so that jitter moves frames across it.
+    // The same frame is drawn here, judged by a threshold halfway between it and the frame before: the whole frames
+    // that reach that time, less half a frame. A frame that arrives that long after the one before draws in any
+    // case, as when rAF or the timer runs no faster than the cap.
+    const due = 1000 / cap - 2;
+    const frame = this.#period;
+    if (
+      this.#hasLast &&
+      cap < 60 &&
+      frameMs < due &&
+      now - this.#lastDrawn < (Math.ceil(due / frame) - 0.5) * frame
+    )
+      return;
+    const dt = this.#hasLast ? Math.min(0.1, (now - this.#lastDrawn) / 1000) : 1 / 60;
+    this.#lastDrawn = now;
     this.#hasLast = true;
     // The measured draw includes harvesting GPU timer results, which v6 did just after its measurement; the
     // difference is a few query reads.

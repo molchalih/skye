@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULTS, resolveParams, type SkyeParams } from "../core/params.ts";
+import { DEFAULTS, QUALITIES, resolveParams, type SkyeParams } from "../core/params.ts";
 import {
   PARAM_ATTRIBUTES,
   SKYE_ATTRIBUTES,
@@ -123,6 +123,14 @@ describe("attributesToParams", () => {
     });
   });
 
+  it.each(QUALITIES)("reads quality=%s as itself", (quality) => {
+    expect(read({ quality }).quality).toBe(quality);
+  });
+
+  it("reads a quality in the wrong case as balanced", () => {
+    expect(read({ quality: "ECO" }).quality).toBe("balanced");
+  });
+
   it("ignores attributes it does not know, v6's names included", () => {
     const asked: string[] = [];
     const params = attributesToParams((name) => {
@@ -179,5 +187,8 @@ describe("toAttributes", () => {
       motion: "full",
     };
     expect(read(toAttributes(params))).toStrictEqual(params);
+    const eco: SkyeParams = { ...params, quality: "eco" };
+    expect(toAttributes(eco).quality).toBe("eco");
+    expect(read(toAttributes(eco))).toStrictEqual(eco);
   });
 });
