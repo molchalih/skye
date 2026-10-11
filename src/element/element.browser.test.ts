@@ -6,6 +6,7 @@ import {
   canvasOf,
   collectErrors as collectPageErrors,
   coverOf,
+  detailOf,
   glOf,
   mount,
   nextEvent,
@@ -433,7 +434,7 @@ describe("context loss", () => {
     await lost;
     // The gradient covers the blank canvas until drawing resumes.
     expect(coverOf(el).hidden).toBe(false);
-    await restored;
+    expect(detailOf(await restored)).toEqual({ replaced: true });
     expect(seen).toEqual([SKYE_READY, SKYE_CONTEXTLOST, SKYE_CONTEXTRESTORED]);
     expect(canvasOf(el)).not.toBe(canvas);
     expect(glOf(el).isContextLost()).toBe(false);
@@ -466,7 +467,7 @@ describe("context loss", () => {
     await wait(0);
     const restored = nextEvent(el, SKYE_CONTEXTRESTORED);
     ext.restoreContext();
-    await restored;
+    expect(detailOf(await restored)).toEqual({ replaced: true });
     expect(canvasOf(el)).not.toBe(canvas);
     expect(seen).toEqual([SKYE_READY, SKYE_CONTEXTLOST, SKYE_CONTEXTRESTORED]);
     await until(() => el.stats()?.passes !== 0, "a frame");
@@ -503,7 +504,7 @@ describe("context loss", () => {
     await wait(100);
     const restored = nextEvent(el, SKYE_CONTEXTRESTORED);
     glOf(el).getExtension("WEBGL_lose_context")?.loseContext();
-    await restored;
+    expect(detailOf(await restored)).toEqual({ replaced: true });
     expect(canvasOf(el)).not.toBe(canvas);
     await wait(100);
     expect(el.stats()?.passes).toBe(0);
@@ -545,7 +546,7 @@ describe("context loss", () => {
     expect(coverOf(el).hidden).toBe(false);
     await wait(0);
     ext.restoreContext();
-    await nextEvent(el, SKYE_CONTEXTRESTORED);
+    expect(detailOf(await nextEvent(el, SKYE_CONTEXTRESTORED))).toEqual({ replaced: false });
     await until(() => coverOf(el).hidden === true, "the gradient to hide");
     await wait(600);
     expect(canvasOf(el)).toBe(canvas);

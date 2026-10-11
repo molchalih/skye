@@ -23,6 +23,7 @@ import {
   SKYE_FALLBACK,
   SKYE_READY,
   SKYE_TIERCHANGE,
+  type ContextRestored,
   type SkyeElement,
 } from "../element/element.ts";
 
@@ -65,8 +66,8 @@ export interface SkyeProps extends SkyeParams, SkyeHTMLAttributes {
   onError?: ((error: Error) => void) | undefined;
   /** The WebGL context was lost. */
   onContextLost?: (() => void) | undefined;
-  /** Drawing again after a context loss. */
-  onContextRestored?: (() => void) | undefined;
+  /** Drawing again after a context loss; `replaced` is whether on a new canvas. */
+  onContextRestored?: ((restored: ContextRestored) => void) | undefined;
   /** WebGL2 is unavailable; the fallback gradient is shown for good. */
   onFallback?: (() => void) | undefined;
   /** The automatic quality tier changed. */
@@ -161,7 +162,8 @@ export function Skye({
     const ready = (): void => handlers.current.onReady?.();
     const error = (e: CustomEvent<Error>): void => handlers.current.onError?.(e.detail);
     const lost = (): void => handlers.current.onContextLost?.();
-    const restored = (): void => handlers.current.onContextRestored?.();
+    const restored = (e: CustomEvent<ContextRestored>): void =>
+      handlers.current.onContextRestored?.(e.detail);
     const fallback = (): void => handlers.current.onFallback?.();
     const tier = (e: CustomEvent<TierChange>): void => handlers.current.onTierChange?.(e.detail);
     el.addEventListener(SKYE_READY, ready);

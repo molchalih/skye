@@ -39,7 +39,11 @@ export interface LoopClient {
  * resumes where its clock says rather than where it stopped.
  */
 export class FrameLoop {
-  /** Frames drawn per second over the last full second; 0 until one has passed. */
+  /**
+   * Animated frames drawn per second over the last full second; 0 until one
+   * has passed since the loop last began animating, and while it is idle or
+   * drawing static frames.
+   */
   fps = 0;
   /** Smoothed CPU ms per animated frame; -1 until one is drawn. */
   cpuMs = -1;
@@ -82,6 +86,7 @@ export class FrameLoop {
     clearTimeout(this.#timeoutId);
     this.#rafId = undefined;
     this.#timeoutId = undefined;
+    this.#resetFps();
   }
 
   /** The next frame ignores the cap and advances by `FIRST_DT_S`, as after a change of params. */
@@ -109,7 +114,10 @@ export class FrameLoop {
 
   #run(now: number): void {
     const client = this.#client;
-    if (!client.canDraw()) return;
+    if (!client.canDraw()) {
+      this.#resetFps();
+      return;
+    }
     if (!this.#hasOrigin) {
       this.#origin = now;
       this.#hasOrigin = true;
@@ -118,6 +126,7 @@ export class FrameLoop {
     time.seconds = (now - this.#origin) / 1000;
     time.isStatic = client.isStatic();
     if (time.isStatic) {
+      this.#resetFps();
       // Some compositors present a canvas one frame late: WebKit GTK and WPE builds from late 2026 show a
       // preserveDrawingBuffer:false, antialias:false canvas with the frame drawn before the last one, so a single
       // draw would leave the previous frame, or a black one, on screen (nearest upstream report:
@@ -175,5 +184,12 @@ export class FrameLoop {
       this.#fpsCount = 0;
       this.#fpsStart = now;
     }
+  }
+
+  // A meter left at its last value would report a rate the loop no longer draws at.
+  #resetFps(): void {
+    this.fps = 0;
+    this.#fpsCount = 0;
+    this.#hasFpsStart = false;
   }
 }

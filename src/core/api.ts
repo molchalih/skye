@@ -63,7 +63,11 @@ export interface SkyeStats {
   gpuMs: number;
   /** Smoothed CPU ms per frame drawn by the loop; -1 until the loop draws one. */
   cpuMs: number;
-  /** Frames the loop drew per second over the last second; 0 until a second has passed. */
+  /**
+   * Animated frames the loop drew per second over the last second; 0 until a
+   * second has passed since it began animating, and while it is idle (stopped,
+   * hidden, lost) or drawing static frames.
+   */
   fps: number;
   /** The loop's frame-rate cap: the tier's, or 30 while a settled blur is shown. */
   fpsCap: number;
