@@ -214,7 +214,7 @@ One table for core, element and React. Bad values are clamped, wrapped or defaul
 | `tier`                | The auto controller's tier index, 0 to 2 (kept under a fixed `quality`; `eco` has no index of its own). |
 | `gpuMs`               | Smoothed GPU ms per frame, or -1. Needs a GPU timer and `quality="auto"` or `sky.probe(true)`.          |
 | `cpuMs`               | Smoothed CPU ms per frame, or -1 before the first.                                                      |
-| `fps`, `fpsCap`       | Frames drawn in the last second, and the loop's cap.                                                    |
+| `fps`, `fpsCap`       | Animated frames drawn in the last second (0 while asleep or static), and the loop's cap.                |
 | `blur`                | Eased blur radius in CSS px.                                                                            |
 | `out`, `sky`, `scene` | `[width, height]` of the canvas, the sky pass and the scene pass.                                       |
 | `mpx`, `passes`       | Megapixels shaded and draw passes in the last frame.                                                    |
@@ -225,16 +225,16 @@ One table for core, element and React. Bad values are clamped, wrapped or defaul
 
 ## Events
 
-Element events bubble and cross shadow roots. Core events carry the same payloads without the `skye-` prefix.
+Element events bubble and cross shadow roots. Core events carry the same payloads without the `skye-` prefix, except `contextrestored`: a core sky always comes back on its own canvas, so it carries none.
 
-| Element event          | Core event        | `detail`            | When                                                |
-| ---------------------- | ----------------- | ------------------- | --------------------------------------------------- |
-| `skye-ready`           | `ready`           | none                | Frames draw. Fires again after a mode change.       |
-| `skye-error`           | `error`           | `Error`             | A shader failed to build, or the worker crashed.    |
-| `skye-contextlost`     | `contextlost`     | none                | The WebGL context was lost; drawing stopped.        |
-| `skye-contextrestored` | `contextrestored` | none                | Drawing again after a loss.                         |
-| `skye-fallback`        | none              | none                | No WebGL2; the gradient stays.                      |
-| `skye-tierchange`      | `tierchange`      | `{ quality, tier }` | The automatic tier changed (`quality="auto"` only). |
+| Element event          | Core event        | `detail`            | When                                                       |
+| ---------------------- | ----------------- | ------------------- | ---------------------------------------------------------- |
+| `skye-ready`           | `ready`           | none                | Frames draw. Fires again after a mode change.              |
+| `skye-error`           | `error`           | `Error`             | A shader failed to build, or the worker crashed.           |
+| `skye-contextlost`     | `contextlost`     | none                | The WebGL context was lost; drawing stopped.               |
+| `skye-contextrestored` | `contextrestored` | `{ replaced }`      | Drawing again after a loss; `replaced` if on a new canvas. |
+| `skye-fallback`        | none              | none                | No WebGL2; the gradient stays.                             |
+| `skye-tierchange`      | `tierchange`      | `{ quality, tier }` | The automatic tier changed (`quality="auto"` only).        |
 
 On the core, an unheard shader error is replayed to later listeners, or thrown once by the next `render()`.
 

@@ -259,6 +259,33 @@ describe("FrameLoop", () => {
     expect(loop.cpuMs).toBeGreaterThanOrEqual(0);
   });
 
+  it.each([
+    ["sleeps", (_r: Recorder, loop: FrameLoop) => loop.sleep()],
+    ["may not draw", (r: Recorder) => void (r.allowed = false)],
+    ["draws static frames", (r: Recorder) => void (r.still = true)],
+  ])(
+    "reads 0 frames per second while the loop %s, and measures afresh once it animates",
+    (_, stop) => {
+      const display = new Display().install();
+      const r = recorder();
+      const loop = new FrameLoop(r);
+      loop.wake();
+      for (let i = 0; i < 70; i++) display.tick(1000 / 60);
+      expect(loop.fps).toBe(61);
+      stop(r, loop);
+      display.tick(1000 / 60);
+      expect(loop.fps).toBe(0);
+      r.allowed = true;
+      r.still = false;
+      loop.wake();
+      for (let i = 0; i < 30; i++) display.tick(1000 / 60);
+      // Half a second into the new window: no full second yet.
+      expect(loop.fps).toBe(0);
+      for (let i = 0; i < 40; i++) display.tick(1000 / 60);
+      expect(loop.fps).toBe(61);
+    },
+  );
+
   it("paces with a timer at the fps cap where the scope has no requestAnimationFrame", () => {
     vi.stubGlobal("requestAnimationFrame", undefined);
     vi.useFakeTimers();

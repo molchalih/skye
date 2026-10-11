@@ -55,6 +55,11 @@ export function glOf(el: SkyeElement): WebGL2RenderingContext {
   return gl;
 }
 
+/** A `CustomEvent`'s detail; undefined for any other event. */
+export function detailOf(event: Event): unknown {
+  return event instanceof CustomEvent ? event.detail : undefined;
+}
+
 export function nextEvent(target: EventTarget, type: string): Promise<Event> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`no ${type} event`)), WAIT_MS);

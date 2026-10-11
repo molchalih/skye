@@ -1,5 +1,15 @@
 # @a240/skye
 
+## 0.3.0
+
+### Minor Changes
+
+- d4f84c2: `skye-contextrestored` says whether the sky came back on a new canvas: its `detail` is now `{ replaced }`, true when the browser did not restore the context within `SkyeElement.restoreTimeoutMs` (or the sky moved between the worker and the main thread during the outage) and false when it restored the canvas it had. React's `onContextRestored` receives the same object. Types: the event's `detail` was `null` and is now the new `ContextRestored`, exported from `@a240/skye/element`. The core's `contextrestored` is unchanged, since a core sky always comes back on its own canvas.
+
+### Patch Changes
+
+- d4f84c2: `stats().fps` reads 0 while the sky is asleep (stopped, hidden, off screen or lost) or drawing static frames, instead of the rate of the last frames it animated, and measures afresh once it animates again. In worker mode the page's snapshot catches up when the worker stops sending them.
+
 ## 0.2.0
 
 ### Minor Changes

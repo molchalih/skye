@@ -133,8 +133,33 @@ type(scope): description
 
 Releases use [Changesets](https://github.com/changesets/changesets) and publish from CI through npm trusted publishing, with provenance. Nothing is published by hand.
 
-1. A change that users can see adds a changeset with `bun run changeset`. Pick the bump (`patch`, `minor` or `major`) and describe the change for a reader of the changelog. Commit the generated file in `.changeset/` with the change.
+1. A change that users can see adds a changeset with `bun run changeset`. Pick the bump by [Versioning](#versioning) and describe the change for a reader of the changelog. Commit the generated file in `.changeset/` with the change.
 2. Run the `release` workflow on `main` (Actions, release, Run workflow). With changesets pending it opens a "version packages" pull request that bumps `package.json`, writes `CHANGELOG.md` and removes the consumed changesets.
 3. Review and merge that pull request, then run the `release` workflow on `main` again. With no changesets pending it publishes the new version to npm and tags it.
 
-The workflow runs only from `main` and through the `npm` environment, which the package's trusted publisher on npm names. While the version is below 1.0.0, a breaking change is a `minor` bump. `changeset status` compares against the `main` branch.
+The workflow runs only from `main` and through the `npm` environment, which the package's trusted publisher on npm names. `changeset status` compares against the `main` branch.
+
+### Versioning
+
+skye follows [Semantic Versioning](https://semver.org). The public API is everything a consumer can reach through the package's entries: exports and their types, the element's attributes, properties, methods and events with their `detail`, the React props, the core's options, methods, events and `stats()` fields, the documented defaults, the CSS a page can style, and the look the gate holds ([Look preservation](#look-preservation)).
+
+A change is **breaking** when code or a page that worked against the previous version can fail to compile, behave differently or look different without changing anything itself:
+
+- an export, entry, attribute, property, method, event, prop or option is removed or renamed;
+- a type narrows where consumers pass it, widens where they receive it (a new member of a union they `switch` over exhaustively counts), or changes shape, as an event `detail` going from `null` to an object;
+- a default, a documented value or the meaning of a field changes;
+- an approved change to the look ships, or the supported browsers or runtimes shrink.
+
+Not breaking: a new export, option, attribute, event or optional field; a fix that makes behaviour match what the docs already say; a change to performance, bundle size or internals that keeps the gate passing.
+
+Which bump each change takes:
+
+| Change                           | Below 1.0.0 | From 1.0.0 |
+| -------------------------------- | ----------- | ---------- |
+| Breaking                         | `minor`     | `major`    |
+| New feature, not breaking        | `patch`     | `minor`    |
+| Fix, performance, docs users see | `patch`     | `patch`    |
+
+Below 1.0.0 a `minor` bump is the breaking one because npm's caret ranges treat it so: `^0.2.0` accepts `0.2.x` and not `0.3.0`, so a consumer on a range never receives a breaking change unasked. A release takes the largest bump among its changesets, so one breaking changeset makes the whole release breaking.
+
+A breaking changeset starts with what breaks, then says how to migrate: the old and new names, types or values, and the code a consumer changes. 1.0.0 is cut by the owner's decision, once the API is meant to hold.

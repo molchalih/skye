@@ -237,7 +237,8 @@ class WorkerSky {
     this.#fence = null;
   }
 
-  // Snapshots only while the sky runs and can be seen.
+  // Snapshots only while the sky runs and can be seen, and one more as they stop, so the page's copy shows the
+  // sleeping loop (its fps 0) rather than the last frames it drew.
   #pace(): void {
     const on = this.#ready && this.#running && this.#visible;
     if (on && this.#statsTimer === undefined) {
@@ -245,6 +246,7 @@ class WorkerSky {
     } else if (!on && this.#statsTimer !== undefined) {
       clearInterval(this.#statsTimer);
       this.#statsTimer = undefined;
+      this.#postStats();
     }
   }
 

@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import type { SkyeStats, TierChange } from "../core/api.ts";
-import type { SkyeElement, SkyeElementEventMap } from "./index.ts";
+import type { ContextRestored, SkyeElement, SkyeElementEventMap } from "./index.ts";
 
 describe("without a DOM", () => {
   it("imports the element entry and the define entry without throwing", async () => {
@@ -21,6 +21,10 @@ describe("types", () => {
     expectTypeOf<SkyeStats["quality"]>().toEqualTypeOf<"eco" | "low" | "balanced" | "high">();
     expectTypeOf<SkyeElementEventMap["skye-error"]>().toEqualTypeOf<CustomEvent<Error>>();
     expectTypeOf<SkyeElementEventMap["skye-ready"]>().toEqualTypeOf<CustomEvent<null>>();
+    expectTypeOf<SkyeElementEventMap["skye-contextrestored"]>().toEqualTypeOf<
+      CustomEvent<ContextRestored>
+    >();
+    expectTypeOf<ContextRestored>().toEqualTypeOf<{ replaced: boolean }>();
     // Listener parameters are inferred from the event name; checked by the compiler, never run.
     const listen = (el: SkyeElement): void => {
       el.addEventListener("skye-tierchange", (e) => {

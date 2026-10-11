@@ -5,6 +5,7 @@ import {
   canvasOf,
   collectErrors,
   coverOf,
+  detailOf,
   glOf,
   mount,
   nextEvent,
@@ -264,6 +265,15 @@ describe("worker mode", () => {
     const b = el.stats();
     expect(a).toEqual(b);
     expect(a).not.toBe(b);
+  });
+
+  it("reads 0 fps once hidden, not the rate of its last frames", async () => {
+    const { el, box } = mount({ worker: "", quality: "low", motion: "full" });
+    await nextEvent(el, SKYE_READY);
+    await until(() => (el.stats()?.fps ?? 0) > 0, "a measured frame rate");
+    box.style.position = "fixed";
+    box.style.left = "-10000px";
+    await until(() => el.stats()?.fps === 0, "the frame rate to drop to 0");
   });
 
   it("forwards attribute changes to the worker", async () => {
@@ -557,7 +567,7 @@ describe("falling back to the main thread", () => {
     const el = await expectMainThread(NO_WEBGL2);
     const restored = nextEvent(el, SKYE_CONTEXTRESTORED);
     glOf(el).getExtension("WEBGL_lose_context")?.loseContext();
-    await restored;
+    expect(detailOf(await restored)).toEqual({ replaced: true });
     expect(TrackedWorker.made).toHaveLength(1);
     expect(el.stats()?.worker).toBe(false);
   });
@@ -574,7 +584,7 @@ describe("context loss in worker mode", () => {
     await lost;
     const restored = nextEvent(el, SKYE_CONTEXTRESTORED);
     el.setAttribute("worker", "");
-    await restored;
+    expect(detailOf(await restored)).toEqual({ replaced: true });
     // Without WebGL2 in workers the main thread brings the sky back, and that is still the one restore.
     expect(el.stats()?.worker).toBe(WORKER_WEBGL2);
     await wait(100);
@@ -595,7 +605,7 @@ describe("context loss in worker mode", () => {
     expect(coverOf(el).hidden).toBe(false);
     const restored = nextEvent(el, SKYE_CONTEXTRESTORED);
     worker.test({ test: "restore" });
-    await restored;
+    expect(detailOf(await restored)).toEqual({ replaced: false });
     await until(() => coverOf(el).hidden === true, "the gradient to hide");
     // Well past the timeout: the browser's restore, forwarded from the worker, cancelled it.
     await wait(600);
@@ -620,7 +630,8 @@ describe("context loss in worker mode", () => {
     await lost;
     const restored = nextEvent(el, SKYE_CONTEXTRESTORED);
     worker.test({ test: "restore" });
-    await Promise.all([drawn, restored]);
+    const [, event] = await Promise.all([drawn, restored]);
+    expect(detailOf(event)).toEqual({ replaced: false });
     expect(worker.terminated).toBe(false);
     expect(seen).toEqual([SKYE_READY, SKYE_CONTEXTLOST, SKYE_CONTEXTRESTORED]);
   });
@@ -647,7 +658,7 @@ describe("context loss in worker mode", () => {
     const canvas = canvasOf(el);
     const restored = nextEvent(el, SKYE_CONTEXTRESTORED);
     worker.test({ test: "lose" });
-    await restored;
+    expect(detailOf(await restored)).toEqual({ replaced: true });
     expect(worker.terminated).toBe(true);
     expect(TrackedWorker.made).toHaveLength(2);
     expect(TrackedWorker.live()).toHaveLength(1);

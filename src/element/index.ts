@@ -13,6 +13,7 @@ export {
   SKYE_READY,
   SKYE_TIERCHANGE,
   SkyeElement,
+  type ContextRestored,
   type SkyeElementEventMap,
   type SkyeEventDetailMap,
   type SkyeEventMap,

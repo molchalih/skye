@@ -39,7 +39,7 @@ const SCENES: ReadonlyArray<Case> = [
   { label: "snowy 9h", scene: "snowy", hour: 9 },
   { label: "fog 6.5h", scene: "fog", hour: 6.5 },
 ];
-const TIERS: ReadonlyArray<Quality> = ["low", "balanced", "high", "auto"];
+const TIERS: ReadonlyArray<Quality> = ["eco", "low", "balanced", "high", "auto"];
 const WARM_MS = 900;
 const MEASURE_MS = 1600;
 const BLUR = 12;
@@ -323,7 +323,7 @@ function statTile(label: string, value: string, unit: string, sub: string): HTML
 function renderSummary(rows: ReadonlyArray<Row>): void {
   const tiles: HTMLDivElement[] = [];
   for (const mode of ["weather tab", "background"]) {
-    for (const tier of ["low", "balanced", "high"]) {
+    for (const tier of ["eco", "low", "balanced", "high"]) {
       const subset = rows.filter((r) => r.mode === mode && r.tier === tier && r.samples > 0);
       if (subset.length === 0) {
         continue;

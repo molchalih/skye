@@ -11,19 +11,30 @@ export const SKYE_READY = "skye-ready";
 export const SKYE_ERROR = "skye-error";
 /** The WebGL context was lost; drawing stopped. */
 export const SKYE_CONTEXTLOST = "skye-contextlost";
-/** After a loss: drawing again, on the restored context or on a replacement canvas. */
+/** After a loss: drawing again, on the restored context or on a replacement canvas; `detail` says which. */
 export const SKYE_CONTEXTRESTORED = "skye-contextrestored";
 /** WebGL2 is unavailable; the fallback gradient is shown for good. */
 export const SKYE_FALLBACK = "skye-fallback";
 /** The automatic quality tier changed (`quality="auto"` only); `detail` is the new tier. */
 export const SKYE_TIERCHANGE = "skye-tierchange";
 
+/** The `detail` of `skye-contextrestored`. */
+export interface ContextRestored {
+  /**
+   * Whether the sky draws on a new canvas: the browser did not restore the
+   * context within `SkyeElement.restoreTimeoutMs`, or the sky moved between
+   * the worker and the main thread during the outage. False when the browser
+   * restored the context of the canvas it had.
+   */
+  replaced: boolean;
+}
+
 /** The `detail` of each event `<skye-view>` dispatches. */
 export interface SkyeEventDetailMap {
   "skye-ready": null;
   "skye-error": Error;
   "skye-contextlost": null;
-  "skye-contextrestored": null;
+  "skye-contextrestored": ContextRestored;
   "skye-fallback": null;
   "skye-tierchange": TierChange;
 }
@@ -104,7 +115,7 @@ function toError(value: unknown): Error {
  * @fires {CustomEvent<null>} skye-ready - Programs are linked and the sky is drawing.
  * @fires {CustomEvent<Error>} skye-error - The sky failed; `detail` is the error. The fallback gradient stays.
  * @fires {CustomEvent<null>} skye-contextlost - The WebGL context was lost; drawing stopped.
- * @fires {CustomEvent<null>} skye-contextrestored - Drawing again after a context loss.
+ * @fires {CustomEvent<ContextRestored>} skye-contextrestored - Drawing again after a context loss; `detail.replaced` is whether on a new canvas.
  * @fires {CustomEvent<null>} skye-fallback - WebGL2 is unavailable; the fallback gradient is shown for good.
  * @fires {CustomEvent<TierChange>} skye-tierchange - The automatic quality tier changed (`quality="auto"` only); `detail` is the new tier.
  */
@@ -400,7 +411,8 @@ export class SkyeElement extends ElementBase {
     this.#replacing = false;
     this.#down = false;
     this.#applyVisibility();
-    this.#emit(replaced ? SKYE_CONTEXTRESTORED : SKYE_READY, null);
+    if (replaced) this.#emit(SKYE_CONTEXTRESTORED, { replaced: true });
+    else this.#emit(SKYE_READY, null);
   };
 
   // Armed on every loss the browser reports, so a second loss while the sky relinks after a restore is
@@ -439,7 +451,7 @@ export class SkyeElement extends ElementBase {
     this.#ready = true;
     this.#down = false;
     this.#applyVisibility();
-    this.#emit(SKYE_CONTEXTRESTORED, null);
+    this.#emit(SKYE_CONTEXTRESTORED, { replaced: false });
   };
 
   // A failed worker gets another try with the new value; a sky already on the main thread stays there when the
