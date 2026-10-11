@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Display } from "../../test/support/display.ts";
-import { FrameLoop, type LoopClient } from "./loop.ts";
+import { FIRST_DT_S, FrameLoop, type LoopClient } from "./loop.ts";
 
 interface Recorder extends LoopClient {
   times: number[];
@@ -24,12 +24,12 @@ function recorder(): Recorder {
     canDraw: () => r.allowed,
     isStatic: () => r.still,
     fpsCap: () => r.cap,
-    draw: (t, dt) => {
-      r.times.push(t);
-      r.steps.push(dt);
+    draw: (time) => {
+      r.times.push(time.seconds);
+      r.steps.push(time.dt);
     },
-    paced: (dtMs, cap) => {
-      r.intervals.push(dtMs);
+    paced: (time, cap) => {
+      r.intervals.push(time.dt * 1000);
       r.caps.push(cap);
     },
   };
@@ -81,9 +81,9 @@ describe("FrameLoop", () => {
     expect(r.intervals.at(-1)).toBeCloseTo(1000 / 60, 9);
   });
 
-  // Display frames per drawn frame: the first frame at or past the cap's interval less 2 ms, as v6 paced, at every
+  // Display frames per drawn frame: the first frame at or past the cap's interval less 2 ms, at every
   // common rate. Each timestamp is up to 0.9 ms off its vsync, so an interval between two drawn frames is up to 1.8 ms
-  // off: v6's fixed threshold, 0.5 ms from the nearest frame at 165 Hz under 20 fps, would drop some of them a frame.
+  // off: a fixed threshold, 0.5 ms from the nearest frame at 165 Hz under 20 fps, would drop some of them a frame.
   const PACING = [
     { cap: 20, hz: 50, frames: 3 },
     { cap: 20, hz: 60, frames: 3 },
@@ -179,7 +179,7 @@ describe("FrameLoop", () => {
     expect(new Set(counts)).toEqual(new Set([6]));
   });
 
-  it("draws one frame per wake while static, outside the meters", () => {
+  it("draws each static frame twice, the repeat a zero step, outside the meters", () => {
     const display = new Display().install();
     const r = recorder();
     r.still = true;
@@ -187,13 +187,48 @@ describe("FrameLoop", () => {
     loop.wake();
     display.tick(16);
     display.tick(16);
-    expect(r.times).toEqual([0]);
+    display.tick(16);
+    expect(r.times).toEqual([0, 0.016]);
+    expect(r.steps).toEqual([FIRST_DT_S, 0]);
     expect(display.pending).toBe(0);
     loop.wake();
     display.tick(16);
-    expect(r.times).toHaveLength(2);
+    display.tick(16);
+    expect(r.times).toHaveLength(4);
     expect(r.intervals).toEqual([]);
     expect(loop.cpuMs).toBe(-1);
+  });
+
+  it("gives a change before the repeat its own pair of static frames", () => {
+    const display = new Display().install();
+    const r = recorder();
+    r.still = true;
+    const loop = new FrameLoop(r);
+    loop.wake();
+    display.tick(16);
+    // The repeat is pending; a change reuses that request as its own first frame.
+    loop.wake();
+    expect(display.pending).toBe(1);
+    for (let i = 0; i < 4; i++) display.tick(16);
+    expect(r.steps).toEqual([FIRST_DT_S, FIRST_DT_S, 0]);
+    expect(display.pending).toBe(0);
+  });
+
+  it("drops the pending repeat when a static sky starts animating", () => {
+    const display = new Display().install();
+    const r = recorder();
+    r.still = true;
+    const loop = new FrameLoop(r);
+    loop.wake();
+    display.tick(16);
+    r.still = false;
+    loop.wake();
+    display.tick(16);
+    display.tick(16);
+    // The animated loop runs as before: a first frame of 1/60 s, then the measured interval.
+    expect(r.steps).toEqual([FIRST_DT_S, FIRST_DT_S, 0.016]);
+    expect(r.intervals).toEqual([FIRST_DT_S * 1000, 16]);
+    expect(display.pending).toBe(1);
   });
 
   it("goes idle when the client cannot draw, keeping its clock", () => {

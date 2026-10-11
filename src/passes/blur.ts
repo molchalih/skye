@@ -1,4 +1,4 @@
-import { blurKernel, createBlurKernel } from "../core/blur-kernel.ts";
+import { createBlurKernel, fitBlurKernel } from "../core/blur-kernel.ts";
 import type { Gpu } from "../gl/context.ts";
 import type { Program, Values } from "../gl/program.ts";
 import type { Target } from "../gl/target.ts";
@@ -9,7 +9,7 @@ import type { PassFrame } from "./frame.ts";
 const COPY_WEIGHTS: readonly [number, number, number, number] = [1, 0, 0, 0];
 
 /**
- * Passes 5 and 6: the separable Gaussian over the glass output, ping-ponging
+ * The background blur: a separable Gaussian over the glass output, ping-ponging
  * between two targets and drawing only into their used sub-rect.
  */
 export class BlurPass {
@@ -58,7 +58,12 @@ export class BlurPass {
         f.passes++;
       }
     }
-    const k = blurKernel(l.sigma, this.#kernel);
+    // A settled blur keeps its kernel.
+    const k = this.#kernel;
+    if (k.sigma !== l.sigma) {
+      k.sigma = l.sigma;
+      fitBlurKernel(k);
+    }
     const tx = 1 / src.width;
     const ty = 1 / src.height;
     v[glsl.BLUR_uSub] = bw / src.width;

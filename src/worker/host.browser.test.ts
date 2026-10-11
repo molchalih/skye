@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { server } from "vitest/browser";
 import { Display } from "../../test/support/display.ts";
 import {
   canvasOf,
@@ -16,6 +17,11 @@ import {
 import { readPixels, wait } from "../../test/support/sky.ts";
 import type { TestRequest } from "../../test/support/workers/instrumented.ts";
 import { JUNK } from "../../test/support/workers/junk.ts";
+import {
+  NO_WORKER_WEBGL2,
+  rendersInWorkers,
+  workerWebGL2,
+} from "../../test/support/worker-webgl2.ts";
 import { ShaderError } from "../index.ts";
 import type { HostMessage } from "./protocol.ts";
 import {
@@ -29,6 +35,10 @@ import {
 } from "../element/index.ts";
 
 defineSkye();
+
+// Where workers get no WebGL2 (only WebKit may lack it), a test of what the sky draws expects the main thread to draw
+// it instead, as the element documents; a test that needs a sky running in a worker skips with the reason.
+const WORKER_WEBGL2 = rendersInWorkers(server.browser, await workerWebGL2());
 
 const INSTRUMENTED = new URL("../../test/support/workers/instrumented.ts", import.meta.url).href;
 const SILENT = new URL("../../test/support/workers/silent.ts", import.meta.url).href;
@@ -143,6 +153,31 @@ function pageErrors(): unknown[] {
   return errors;
 }
 
+/**
+ * Mounts a worker-mode element, expects it to end up drawing on the main
+ * thread with no error surfacing on the page, and returns it.
+ */
+async function expectMainThread(worker: string): Promise<SkyeElement> {
+  const errors = pageErrors();
+  const display = new Display().install();
+  const { el } = mount({ worker, motion: "static" });
+  const seen = record(el);
+  await nextEvent(el, SKYE_READY);
+  expect(el.stats()?.worker).toBe(false);
+  expect(TrackedWorker.live()).toHaveLength(0);
+  // Past any frame already requested from the real display.
+  await wait(100);
+  el.setAttribute("hour", "13");
+  display.tick();
+  expect(nonBlack(readPixels(glOf(el)))).toBeGreaterThan(0);
+  display.tick();
+  expect(coverOf(el).hidden).toBe(true);
+  await wait(100);
+  expect(seen).toEqual([SKYE_READY]);
+  expect(errors).toEqual([]);
+  return el;
+}
+
 beforeEach(() => {
   TrackedWorker.made = [];
   vi.stubGlobal("Worker", TrackedWorker);
@@ -161,6 +196,11 @@ afterEach(async () => {
 
 describe("worker mode", () => {
   it("renders in a worker loaded from skye's own module", async () => {
+    if (!WORKER_WEBGL2) {
+      await expectMainThread("");
+      expect(TrackedWorker.made).toHaveLength(1);
+      return;
+    }
     const errors = pageErrors();
     const { el } = mount({ worker: "", motion: "static", quality: "balanced" });
     const seen = record(el);
@@ -240,6 +280,9 @@ describe("worker mode", () => {
   it("forwards size changes to the worker", async () => {
     const { el, box } = mount({ worker: "", quality: "balanced", motion: "static" });
     await nextEvent(el, SKYE_READY);
+    expect(el.stats()?.worker).toBe(WORKER_WEBGL2);
+    // A worker's snapshot at ready already holds its first frame; the main thread sizes its canvas at its first frame.
+    if (!WORKER_WEBGL2) await until(() => el.stats()?.out[0] === 160, "the first frame");
     expect(el.stats()?.out).toEqual([160, 100]);
     box.style.width = "240px";
     box.style.height = "90px";
@@ -271,7 +314,8 @@ describe("worker mode", () => {
     await until(() => el.stats()?.static === true, "static frames");
   });
 
-  it("pauses the worker's frames while hidden and resumes when shown", async () => {
+  it("pauses the worker's frames while hidden and resumes when shown", async ({ skip }) => {
+    skip(!WORKER_WEBGL2, NO_WORKER_WEBGL2);
     const { el, box } = mount({ worker: INSTRUMENTED, motion: "full" });
     await nextEvent(el, SKYE_READY);
     const worker = TrackedWorker.only();
@@ -287,7 +331,8 @@ describe("worker mode", () => {
     await worker.drawsPast(paused);
   });
 
-  it("terminates the worker when the element is removed", async () => {
+  it("terminates the worker when the element is removed", async ({ skip }) => {
+    skip(!WORKER_WEBGL2, NO_WORKER_WEBGL2);
     const { el, box } = mount({ worker: "" });
     await nextEvent(el, SKYE_READY);
     const worker = TrackedWorker.only();
@@ -297,7 +342,8 @@ describe("worker mode", () => {
     expect(el.stats()).toBeNull();
   });
 
-  it("keeps one worker through remount churn", async () => {
+  it("keeps one worker through remount churn", async ({ skip }) => {
+    skip(!WORKER_WEBGL2, NO_WORKER_WEBGL2);
     const { el, box } = mount({ worker: "", motion: "static" });
     const seen = record(el);
     // A synchronous disconnect and reconnect, as a framework's double mount does.
@@ -332,7 +378,8 @@ describe("worker mode", () => {
     expect(el.stats()).toBeNull();
   });
 
-  it("ignores messages that are not the protocol's, on both sides", async () => {
+  it("ignores messages that are not the protocol's, on both sides", async ({ skip }) => {
+    skip(!WORKER_WEBGL2, NO_WORKER_WEBGL2);
     const errors = pageErrors();
     const { el } = mount({ worker: INSTRUMENTED, motion: "full", quality: "balanced" });
     const seen = record(el);
@@ -348,7 +395,10 @@ describe("worker mode", () => {
     expect(errors).toEqual([]);
   });
 
-  it("reports a worker that crashes after its first frame as skye-error and shows the gradient", async () => {
+  it("reports a worker that crashes after its first frame as skye-error and shows the gradient", async ({
+    skip,
+  }) => {
+    skip(!WORKER_WEBGL2, NO_WORKER_WEBGL2);
     // The crash is left to surface on the page as uncaught where the engine forwards worker errors to the page
     // (Chromium does). This test keeps that expected one from the test runner, which would report it as unhandled.
     const onError = (e: ErrorEvent): void => {
@@ -373,7 +423,8 @@ describe("worker mode", () => {
     expect(seen).toEqual([SKYE_READY, SKYE_ERROR]);
   });
 
-  it("reports a failed shader build as a ShaderError, as on the main thread", async () => {
+  it("reports a failed shader build as a ShaderError, as on the main thread", async ({ skip }) => {
+    skip(!WORKER_WEBGL2, NO_WORKER_WEBGL2);
     const { el } = mount({ worker: FAILS_LINKS, motion: "static" });
     const seen = record(el);
     const event = await nextEvent(el, SKYE_ERROR);
@@ -395,6 +446,17 @@ describe("worker mode", () => {
 
     el.setAttribute("worker", "");
     await nextEvent(el, SKYE_READY);
+    if (!WORKER_WEBGL2) {
+      // The worker reports no WebGL2 and the main thread takes over again, where removing the attribute leaves it.
+      expect(el.stats()?.worker).toBe(false);
+      expect(TrackedWorker.made).toHaveLength(1);
+      expect(TrackedWorker.live()).toHaveLength(0);
+      el.removeAttribute("worker");
+      await wait(50);
+      expect(el.stats()?.worker).toBe(false);
+      expect(seen).toEqual([SKYE_READY, SKYE_READY]);
+      return;
+    }
     expect(el.stats()?.worker).toBe(true);
     const worker = TrackedWorker.only();
 
@@ -412,31 +474,6 @@ describe("worker mode", () => {
 });
 
 describe("falling back to the main thread", () => {
-  /**
-   * Mounts a worker-mode element, expects it to end up drawing on the main
-   * thread with no error surfacing on the page, and returns it.
-   */
-  async function expectMainThread(worker: string): Promise<SkyeElement> {
-    const errors = pageErrors();
-    const display = new Display().install();
-    const { el } = mount({ worker, motion: "static" });
-    const seen = record(el);
-    await nextEvent(el, SKYE_READY);
-    expect(el.stats()?.worker).toBe(false);
-    expect(TrackedWorker.live()).toHaveLength(0);
-    // Past any frame already requested from the real display.
-    await wait(100);
-    el.setAttribute("hour", "13");
-    display.tick();
-    expect(nonBlack(readPixels(glOf(el)))).toBeGreaterThan(0);
-    display.tick();
-    expect(coverOf(el).hidden).toBe(true);
-    await wait(100);
-    expect(seen).toEqual([SKYE_READY]);
-    expect(errors).toEqual([]);
-    return el;
-  }
-
   it("when the worker URL is not found", async () => {
     await expectMainThread("/no-such-skye-worker.js");
     expect(TrackedWorker.made).toHaveLength(1);
@@ -509,9 +546,10 @@ describe("falling back to the main thread", () => {
     expect(seen).toEqual([]);
     el.setAttribute("worker", "");
     await nextEvent(el, SKYE_READY);
-    expect(el.stats()?.worker).toBe(true);
+    // skye's own worker gets its try; without WebGL2 in workers it falls back to the main thread like the first.
+    expect(el.stats()?.worker).toBe(WORKER_WEBGL2);
     expect(TrackedWorker.made).toHaveLength(2);
-    expect(TrackedWorker.live()).toHaveLength(1);
+    expect(TrackedWorker.live()).toHaveLength(WORKER_WEBGL2 ? 1 : 0);
   });
 
   it("and stays there through a context-loss replacement", async () => {
@@ -537,12 +575,14 @@ describe("context loss in worker mode", () => {
     const restored = nextEvent(el, SKYE_CONTEXTRESTORED);
     el.setAttribute("worker", "");
     await restored;
-    expect(el.stats()?.worker).toBe(true);
+    // Without WebGL2 in workers the main thread brings the sky back, and that is still the one restore.
+    expect(el.stats()?.worker).toBe(WORKER_WEBGL2);
     await wait(100);
     expect(seen).toEqual([SKYE_READY, SKYE_CONTEXTLOST, SKYE_CONTEXTRESTORED]);
   });
 
-  it("forwards the worker's loss and a prompt restore, keeping the worker", async () => {
+  it("forwards the worker's loss and a prompt restore, keeping the worker", async ({ skip }) => {
+    skip(!WORKER_WEBGL2, NO_WORKER_WEBGL2);
     SkyeElement.restoreTimeoutMs = 400;
     const { el } = mount({ worker: INSTRUMENTED, motion: "static" });
     const seen = record(el);
@@ -565,7 +605,10 @@ describe("context loss in worker mode", () => {
     expect(seen).toEqual([SKYE_READY, SKYE_CONTEXTLOST, SKYE_CONTEXTRESTORED]);
   });
 
-  it("forwards a loss and restore that land between a frame's fence and its wait", async () => {
+  it("forwards a loss and restore that land between a frame's fence and its wait", async ({
+    skip,
+  }) => {
+    skip(!WORKER_WEBGL2, NO_WORKER_WEBGL2);
     const { el } = mount({ worker: INSTRUMENTED, motion: "static" });
     const seen = record(el);
     await nextEvent(el, SKYE_READY);
@@ -582,7 +625,8 @@ describe("context loss in worker mode", () => {
     expect(seen).toEqual([SKYE_READY, SKYE_CONTEXTLOST, SKYE_CONTEXTRESTORED]);
   });
 
-  it("answers for a frame whose fence never signals", async () => {
+  it("answers for a frame whose fence never signals", async ({ skip }) => {
+    skip(!WORKER_WEBGL2, NO_WORKER_WEBGL2);
     const { el } = mount({ worker: INSTRUMENTED, motion: "static" });
     await nextEvent(el, SKYE_READY);
     const worker = TrackedWorker.only();
@@ -591,7 +635,10 @@ describe("context loss in worker mode", () => {
     expect(worker.terminated).toBe(false);
   });
 
-  it("replaces the canvas and the worker when the context is not restored in time", async () => {
+  it("replaces the canvas and the worker when the context is not restored in time", async ({
+    skip,
+  }) => {
+    skip(!WORKER_WEBGL2, NO_WORKER_WEBGL2);
     SkyeElement.restoreTimeoutMs = 100;
     const { el } = mount({ worker: INSTRUMENTED, motion: "static" });
     const seen = record(el);

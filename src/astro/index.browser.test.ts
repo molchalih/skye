@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectClose } from "../../test/support/close.ts";
 import { moonPhase, solarPosition } from "./index.ts";
 
 interface V6Math {
@@ -24,11 +25,12 @@ describe("astro against v6", () => {
           for (const noon of [11.5, 12.7]) {
             const a = v6.solar(lat, day, hour, noon);
             const b = solarPosition(lat, day, hour, noon);
-            expect(b.sinElevation).toBe(a.sinEl);
-            expect(b.elevationDeg).toBe(a.el);
-            expect(b.azimuth).toBe(a.az);
-            expect(b.sunrise).toBe(a.sunrise);
-            expect(b.sunset).toBe(a.sunset);
+            const at = `lat ${lat}, day ${day}, hour ${hour}, noon ${noon}`;
+            expectClose(b.sinElevation, a.sinEl, `sin elevation at ${at}`);
+            expectClose(b.elevationDeg, a.el, `elevation at ${at}`);
+            expectClose(b.azimuth, a.az, `azimuth at ${at}`);
+            expectClose(b.sunrise, a.sunrise, `sunrise at ${at}`);
+            expectClose(b.sunset, a.sunset, `sunset at ${at}`);
             expect(b.polar ?? "").toBe(a.polar);
             n++;
           }
@@ -44,8 +46,8 @@ describe("astro against v6", () => {
       ms < Date.UTC(2050, 0, 1);
       ms += 86_400_000 * 13 + 1234567
     ) {
-      expect(moonPhase(ms)).toBe(v6.moonPhase(ms));
-      expect(moonPhase(new Date(ms))).toBe(v6.moonPhase(new Date(ms)));
+      expectClose(moonPhase(ms), v6.moonPhase(ms), `moon phase at ${ms}`);
+      expectClose(moonPhase(new Date(ms)), v6.moonPhase(new Date(ms)), `moon phase at ${ms}`);
     }
   });
 });

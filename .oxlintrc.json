@@ -18,6 +18,8 @@
     "**/dist/**",
     "**/node_modules/**",
     "test/reference/weather-sky-v6.js",
+    "test/reference/skye-approved.*",
+    "test/reference/skye-baseline-*",
     "test/consumers/types/**",
     "test/consumers/vite/**"
   ],

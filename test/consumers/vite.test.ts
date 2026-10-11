@@ -3,7 +3,14 @@ import { join } from "node:path";
 import type { Browser } from "playwright";
 import { build, createServer, preview, type InlineConfig } from "vite";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { drawnSky, ENGINES, launch, MIN_COLOURS, openPage } from "./browsers.ts";
+import {
+  drawnSky,
+  ENGINES,
+  launch,
+  MIN_COLOURS,
+  openPage,
+  rendersInWorkersOn,
+} from "./browsers.ts";
 import { CONSUMERS, SCRATCH } from "./paths.ts";
 
 const ROOT = join(CONSUMERS, "vite");
@@ -17,13 +24,17 @@ const BASE: InlineConfig = {
   build: { outDir: OUT, emptyOutDir: true },
 };
 
-/** Both elements draw in a worker: `#worker` in skye's own, `#custom` in the app's worker module. */
+/**
+ * Both elements draw in a worker: `#worker` in skye's own, `#custom` in the app's worker module. Where workers get no
+ * WebGL2, both draw on the main thread instead.
+ */
 async function expectWorkerSkies(browser: Browser, url: string): Promise<void> {
   const { page, errors } = await openPage(browser);
   await page.goto(url);
   const ids = ["worker", "custom"];
   const skies = await Promise.all(ids.map((id) => drawnSky(page, id)));
-  expect(skies.map((sky) => sky.worker)).toEqual([true, true]);
+  const inWorker = await rendersInWorkersOn(page);
+  expect(skies.map((sky) => sky.worker)).toEqual([inWorker, inWorker]);
   for (const [i, sky] of skies.entries()) expect(sky.colours, ids[i]).toBeGreaterThan(MIN_COLOURS);
   expect(errors).toEqual([]);
   await page.close();

@@ -1,6 +1,13 @@
 import { clamp } from "../core/math.ts";
 
 const DEG = Math.PI / 180;
+/** The Earth turns 15° an hour. */
+const HOUR_ANGLE = 15 * DEG;
+/** The tilt of the Earth's axis: the sun's declination swings this far either side of the equator. */
+const OBLIQUITY = 23.44 * DEG;
+const DAYS_PER_YEAR = 365;
+/** Cooper's phase: the declination's sine crosses zero at the March equinox, day 81, as 284 + 81 = 365. */
+const EQUINOX_PHASE_DAYS = 284;
 const MS_PER_DAY = 86_400_000;
 const SYNODIC_MONTH_DAYS = 29.530588853;
 // Reference new moon: 2000-01-06 18:14 UTC.
@@ -23,7 +30,8 @@ export interface SolarPosition {
 }
 
 /**
- * Sun position from a declination approximation.
+ * Sun position from Cooper's declination approximation, which is good to
+ * about a degree; enough for where a sky puts its sun.
  * @param latitude degrees, north positive
  * @param day 1 is 1 January
  * @param hour local clock hour, read against `solarNoon` (not true solar time)
@@ -45,8 +53,8 @@ export function solarPosition(
   },
 ): SolarPosition {
   const phi = latitude * DEG;
-  const dec = 23.44 * DEG * Math.sin((2 * Math.PI * (284 + day)) / 365);
-  const h = (hour - solarNoon) * 15 * DEG;
+  const dec = OBLIQUITY * Math.sin((2 * Math.PI * (EQUINOX_PHASE_DAYS + day)) / DAYS_PER_YEAR);
+  const h = (hour - solarNoon) * HOUR_ANGLE;
   const sinElevation = clamp(
     Math.sin(phi) * Math.sin(dec) + Math.cos(phi) * Math.cos(dec) * Math.cos(h),
     -1,
@@ -57,7 +65,8 @@ export function solarPosition(
     Math.cos(h) * Math.sin(phi) - Math.tan(dec) * Math.cos(phi),
   );
   const cosH0 = -Math.tan(phi) * Math.tan(dec);
-  const halfDay = Math.acos(clamp(cosH0, -1, 1)) / (15 * DEG);
+  // The hour angle at which the sun's centre crosses the horizon, clamped for midnight sun and polar night.
+  const halfDay = Math.acos(clamp(cosH0, -1, 1)) / HOUR_ANGLE;
   out.sinElevation = sinElevation;
   out.elevationDeg = Math.asin(sinElevation) / DEG;
   out.azimuth = azimuth;

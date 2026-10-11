@@ -3,7 +3,7 @@ export type TargetKind = "hdr" | "r8" | "rgba8";
 
 /**
  * Scale applied to HDR values before they are stored. RGBA8 fallback targets
- * clip at 1, so values are stored at a fifth and divided back on read (v6 `enc`).
+ * clip at 1, so values are stored at a fifth and divided back on read.
  */
 export function hdrEncoding(float: boolean): number {
   return float ? 1 : 0.2;

@@ -11,7 +11,7 @@ import { ParticlesPass } from "./particles.ts";
 import { raysActive, RaysPass } from "./rays.ts";
 import { SkyPass } from "./sky.ts";
 
-/** The six passes, their render targets and the noise texture the sky and the glass's frost read, run in v6's order. */
+/** The six passes, in drawing order, with their render targets and the noise texture the sky and the glass's frost read. */
 export class Pipeline {
   readonly #gpu: Gpu;
   readonly #sky: SkyPass;
@@ -73,8 +73,8 @@ export class Pipeline {
     this.#skyTarget.resize(l.skyWidth, l.skyHeight);
     this.#raysTarget.resize(l.skyWidth, l.skyHeight);
     this.#sceneTarget.resize(l.sceneWidth, l.sceneHeight);
-    // The blur targets hold storage only while the blur chain runs. While it fades they are full size, as v6's
-    // always are, since the glass draws there at full size; once it settles they shrink to the chain size. The
+    // The blur targets hold storage only while the blur chain runs. While it fades they are full size, since the
+    // glass draws there at full size; once it settles they shrink to the chain size. The
     // tween is monotone, so a fade allocates once on its way in and frees once on its way out.
     const width = l.blurring ? (l.shrink ? l.blurWidth : l.width) : 0;
     const height = l.blurring ? (l.shrink ? l.blurHeight : l.height) : 0;

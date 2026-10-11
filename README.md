@@ -101,6 +101,8 @@ const frame = (ms: number) => {
 requestAnimationFrame(frame);
 ```
 
+Some compositors (WebKit GTK and WPE) show a canvas one frame late: keep drawing, or follow a lone `render(t)` with another on the next display frame, or the previous frame stays on screen.
+
 Also: `setVisible(visible)`, `setReducedMotion(reduced)`, `stats()`, `probe(on)`, `stop()`, `dispose()`. `on(event, handler)` returns an unsubscribe function. The `random` option replaces the lightning random source for reproducible frames.
 
 `createSky` uses a context the canvas already has, with that context's attributes; otherwise it asks for its own with the browser's default GPU.
@@ -239,9 +241,9 @@ On the core, an unheard shader error is replayed to later listeners, or thrown o
 ## Behaviour
 
 - **Lifecycle.** The element starts when the browser is idle (within 300 ms), pauses off screen, in hidden documents or when disconnected, and follows its size and pixel ratio.
-- **Fallback.** A CSS gradient for the scene and hour shows until the sky is ready, or for good without WebGL2.
+- **Fallback.** A CSS gradient for the scene and hour shows until the sky's first frame is on screen, or for good without WebGL2.
 - **Context loss.** The sky rebuilds and resumes once the context is restored. The element replaces its canvas if that takes over `SkyeElement.restoreTimeoutMs` (3000 ms).
-- **Reduced motion.** Under `prefers-reduced-motion: reduce`, `motion="auto"` draws one frame per change and idles. `static` always does; `full` never does. The core reads the query once; call `setReducedMotion(reduced)` for changes.
+- **Reduced motion.** Under `prefers-reduced-motion: reduce`, `motion="auto"` draws one frame per change, repeats it on the next display frame (some compositors show a canvas one frame late) and idles. `static` always does; `full` never does. The core reads the query once; call `setReducedMotion(reduced)` for changes.
 - **Several skies** on one page are independent.
 - **Server rendering.** Every entry imports without a DOM; `@a240/skye/define` defines nothing there. `<Skye>` renders a bare `<skye-view>` and upgrades on the client.
 
@@ -263,7 +265,7 @@ Brotli at quality 11, gzip at level 9 (`gzip -9`); 1 kB is 1000 bytes.
 
 | Entry               | Size    | Contents                               |
 | ------------------- | ------- | -------------------------------------- |
-| `@a240/skye`        | 16.8 kB | Core.                                  |
+| `@a240/skye`        | 16.9 kB | Core.                                  |
 | `@a240/skye/define` | 20.0 kB | Element and core.                      |
 | `@a240/skye/react`  | 20.6 kB | Component, element and core, no React. |
 
@@ -271,9 +273,9 @@ Brotli at quality 11, gzip at level 9 (`gzip -9`); 1 kB is 1000 bytes.
 
 | Entry              | Files | Rounds | Minified | Brotli  | gzip    |
 | ------------------ | ----- | ------ | -------- | ------- | ------- |
-| `dist/define.js`   | 5     | 2      | 61.2 kB  | 21.3 kB | 24.0 kB |
-| `dist/index.js`    | 3     | 2      | 49.5 kB  | 17.4 kB | 19.5 kB |
-| `dist/worker.js`\* | 4     | 2      | 52.9 kB  | 18.6 kB | 20.9 kB |
+| `dist/define.js`   | 5     | 2      | 62.1 kB  | 21.4 kB | 24.0 kB |
+| `dist/index.js`    | 3     | 2      | 50.3 kB  | 17.5 kB | 19.6 kB |
+| `dist/worker.js`\* | 4     | 2      | 53.7 kB  | 18.7 kB | 21.0 kB |
 
 \* Only `worker.js` itself (1.2 kB brotli) is new; the rest the page already has.
 

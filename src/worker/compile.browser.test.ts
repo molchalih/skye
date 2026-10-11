@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { server } from "vitest/browser";
 import {
   collectErrors,
   coverOf,
@@ -9,9 +10,17 @@ import {
   until,
 } from "../../test/support/element.ts";
 import { wait } from "../../test/support/sky.ts";
+import {
+  NO_WORKER_WEBGL2,
+  rendersInWorkers,
+  workerWebGL2,
+} from "../../test/support/worker-webgl2.ts";
 import { SKYE_READY, defineSkye } from "../element/index.ts";
 
 defineSkye();
+
+// Both tests hold a sky compiling in the worker; without WebGL2 there the worker never compiles anything.
+const WORKER_WEBGL2 = rendersInWorkers(server.browser, await workerWebGL2());
 
 const COMPILES_SLOWLY = new URL("../../test/support/workers/compiles-slowly.ts", import.meta.url)
   .href;
@@ -63,7 +72,10 @@ afterEach(async () => {
 });
 
 describe("compiling in a worker", () => {
-  it("keeps the gradient until the driver reports the programs done, then shows the sky", async () => {
+  it("keeps the gradient until the driver reports the programs done, then shows the sky", async ({
+    skip,
+  }) => {
+    skip(!WORKER_WEBGL2, NO_WORKER_WEBGL2);
     const { el } = mount({ worker: COMPILES_SLOWLY, motion: "static", quality: "balanced" });
     const seen = record(el);
     const worker = await only();
@@ -76,7 +88,8 @@ describe("compiling in a worker", () => {
     expect(seen).toEqual([SKYE_READY]);
   });
 
-  it("ends the worker without an event when removed mid-compile", async () => {
+  it("ends the worker without an event when removed mid-compile", async ({ skip }) => {
+    skip(!WORKER_WEBGL2, NO_WORKER_WEBGL2);
     const { errors, stop } = collectErrors();
     const { el, box } = mount({ worker: COMPILES_SLOWLY, motion: "static" });
     const seen = record(el);

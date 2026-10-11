@@ -5,9 +5,9 @@ import { Target, type TargetKind } from "./target.ts";
 export type SkyCanvas = HTMLCanvasElement | OffscreenCanvas;
 
 /**
- * v6's context attributes, except that the drawing buffer is not preserved
- * between frames, it has no depth or stencil buffer (no pass tests either),
- * and the browser picks the GPU. Left out, powerPreference is "default":
+ * An opaque canvas without antialiasing, depth or stencil (no pass tests
+ * either), whose drawing buffer is not preserved between frames (every frame
+ * redraws it whole), on the GPU the browser picks. Left out, powerPreference is "default":
  * Chrome treats it as "low-power", Firefox asks for the discrete GPU only for
  * "high-performance", and Safari puts a page's canvas on the GPU driving its
  * window (in a worker, on the system default). A GPU switch after that is a
@@ -86,7 +86,9 @@ export class Gpu {
     this.#viewportWidth = -1;
     this.#viewportHeight = -1;
     this.#unit = -1;
-    this.#textures.fill(undefined);
+    // Slot by slot: Array.prototype.fill allocates on every call in Chrome, and this runs every frame.
+    const textures = this.#textures;
+    for (let unit = 0; unit < textures.length; unit++) textures[unit] = undefined;
     this.#vertexArray = undefined;
   }
 

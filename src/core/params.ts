@@ -14,7 +14,7 @@ export type AutoTier = Exclude<Tier, "eco">;
 /** `"full"` animates, `"static"` draws one frame per change, `"auto"` follows prefers-reduced-motion. */
 export type Motion = "auto" | "full" | "static";
 
-/** Every scene name, in v6's order. */
+/** Every scene name. */
 export const SCENE_NAMES: readonly SceneName[] = [
   "clear",
   "cloudy",
@@ -52,7 +52,7 @@ export interface SkyeParams {
   hour?: number | undefined;
   /** Degrees, clamped to -66..66. */
   latitude?: number | undefined;
-  /** Day of the year. Nominally 1-366; the value is used as given, as in v6. */
+  /** Day of the year. Nominally 1-366; the value is used as given, without wrapping. */
   dayOfYear?: number | undefined;
   /** Local hour of solar noon. */
   solarNoon?: number | undefined;
@@ -62,7 +62,7 @@ export interface SkyeParams {
   glass?: boolean | undefined;
   /** Glass focus depth, clamped to 0.12-1. */
   focus?: number | undefined;
-  /** Overall brightness (v6 `dim`), clamped to 0.2-1.2. */
+  /** Overall brightness, clamped to 0.2-1.2. */
   exposure?: number | undefined;
   /** Background blur in px, clamped to 0-64. */
   blur?: number | undefined;
@@ -119,6 +119,12 @@ export const DEFAULTS: Readonly<ResolvedParams> = Object.freeze({
   motion: "auto",
 });
 
+/**
+ * Latitudes beyond this are clamped to it: just inside the polar circles
+ * (66.56°), so every day of the year has a sunrise and a sunset.
+ */
+const MAX_LATITUDE_DEG = 66;
+
 function num(v: number | undefined, fallback: number): number {
   return typeof v === "number" && Number.isFinite(v) ? v : fallback;
 }
@@ -138,16 +144,13 @@ export function resolveQuality(v: unknown): Quality {
   return QUALITIES.find((q) => q === v) ?? "balanced";
 }
 
-/** Empty or absent is `"auto"`; v6 treats any motion other than `"static"` or `"auto"` as full motion. */
+/** Empty or absent is `"auto"`; any value other than `"static"` or `"auto"` means full motion. */
 export function resolveMotion(v: unknown): Motion {
   if (v === undefined || v === null || v === "" || v === "auto") return "auto";
   return v === "static" ? "static" : "full";
 }
 
-/**
- * Applies defaults, clamping and wrapping exactly as v6's attribute parsing
- * did. Never throws; `null` or `undefined` resolves to `DEFAULTS`.
- */
+/** Applies defaults, clamping and wrapping. Never throws; `null` or `undefined` resolves to `DEFAULTS`. */
 export function resolveParams(params: Partial<SkyeParams> | null | undefined): ResolvedParams {
   const d = DEFAULTS;
   const input = params ?? {};
@@ -158,7 +161,7 @@ export function resolveParams(params: Partial<SkyeParams> | null | undefined): R
     wind: typeof input.wind === "number" && Number.isFinite(input.wind) ? input.wind : undefined,
     seed: num(input.seed, d.seed),
     hour: wrap(num(input.hour, d.hour), 24),
-    latitude: clamp(num(input.latitude, d.latitude), -66, 66),
+    latitude: clamp(num(input.latitude, d.latitude), -MAX_LATITUDE_DEG, MAX_LATITUDE_DEG),
     dayOfYear: num(input.dayOfYear, d.dayOfYear),
     solarNoon: num(input.solarNoon, d.solarNoon),
     moonPhase: wrap(num(input.moonPhase, d.moonPhase), 1),

@@ -66,8 +66,9 @@ function toError(value: unknown): Error {
  * with attributes (see `SKYE_ATTRIBUTES`); it starts when the browser is idle,
  * follows its size and the device pixel ratio, pauses while off screen, in a
  * hidden document or disconnected, and draws once per change under
- * `motion="static"` or a reduced-motion preference. Until the sky is ready,
- * and for good without WebGL2, it shows a gradient for the scene and hour.
+ * `motion="static"` or a reduced-motion preference. Until the sky's first
+ * frame is on screen, and for good without WebGL2, it shows a gradient for
+ * the scene and hour.
  *
  * With the `worker` attribute the sky renders in a dedicated worker, on the
  * canvas transferred to an `OffscreenCanvas`; a non-empty value is the URL of
@@ -344,12 +345,16 @@ export class SkyeElement extends ElementBase {
 
   // Called right after the sky is told it is visible or announces that it draws, so the gradient goes away once the
   // canvas shows the frame that follows, never over a blank canvas. A worker's frame shows later than the page's
-  // own, so the host decides when.
+  // own, so the host decides when. Then one page frame more: a compositor that presents a canvas one frame late (see
+  // FrameLoop) shows the sky's first frame only in the next, and a blank canvas until then.
   #scheduleReveal(host: SkyHost): void {
     if (this.#reveal !== undefined) return;
     this.#reveal = host.afterFrame(() => {
-      this.#reveal = undefined;
-      this.#cover.hidden = true;
+      const id = requestAnimationFrame(() => {
+        this.#reveal = undefined;
+        this.#cover.hidden = true;
+      });
+      this.#reveal = () => cancelAnimationFrame(id);
     });
   }
 

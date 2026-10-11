@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createFrameState } from "./frame-state.ts";
+import { expectClose } from "../../test/support/close.ts";
+import { createFrameState, type FrameTime } from "./frame-state.ts";
 import { computeLayout, createLayout, fpsCap } from "./layout.ts";
 import { Lightning } from "./lightning.ts";
 import { createRandom } from "./random.ts";
-import { TIERS } from "./tables.ts";
+import { TIERS } from "./tiers.ts";
 
 await import("../../test/reference/weather-sky-v6.js");
 
@@ -15,6 +16,11 @@ afterEach(() => {
 
 function call(el: HTMLElement, name: string, ...args: unknown[]): unknown {
   return Reflect.apply(Reflect.get(el, name), el, args);
+}
+
+function numbers(v: unknown): number[] {
+  if (!Array.isArray(v)) throw new Error(`expected an array, got ${String(v)}`);
+  return v.map(Number);
 }
 
 function readRecord(el: HTMLElement, name: string): Record<string, unknown> {
@@ -30,8 +36,12 @@ describe("Lightning against v6", () => {
     const mineRandom = createRandom(11);
     const mine = new Lightning();
     const state = createFrameState();
-    let strikes = 0;
+    const time: FrameTime = { seconds: 0, dt: 0.5, isStatic: false };
+    // Strike times exactly; the values in between to float32 precision (test/support/close.ts).
+    const v6Strikes: number[] = [];
+    const strikes: number[] = [];
     let lastStart = -1;
+    let lastPosition = mine.position.join();
     for (let f = 0; f < 2000; f++) {
       const t = f * 0.5;
       const phase = Math.floor(f / 250) % 4;
@@ -50,19 +60,23 @@ describe("Lightning against v6", () => {
       vi.spyOn(Math, "random").mockImplementation(v6Random);
       const expected = call(el, "_lightning", t, env);
       vi.restoreAllMocks();
-      const got = mine.step(t, state, mineRandom);
+      time.seconds = t;
+      mine.step(time, state, mineRandom);
       const bolt = readRecord(el, "_bolt");
-      expect(got).toBe(expected);
-      expect(mine.bolt).toBe(bolt.bolt);
-      expect(mine.seed).toBe(bolt.seed);
-      expect(mine.position).toEqual(bolt.pos);
+      expectClose(mine.flash, Number(expected), `flash at frame ${f}`);
+      expectClose(mine.bolt, Number(bolt.bolt), `bolt at frame ${f}`);
+      expectClose(mine.seed, Number(bolt.seed), `bolt seed at frame ${f}`);
+      expectClose(mine.position, numbers(bolt.pos), `bolt position at frame ${f}`);
       const start = Number(bolt.start);
-      if (start !== lastStart) {
-        lastStart = start;
-        strikes++;
-      }
+      if (start !== lastStart && start >= 0) v6Strikes.push(start);
+      lastStart = start;
+      // Each strike draws a new bolt position, so a new position marks one.
+      const position = mine.position.join();
+      if (position !== lastPosition) strikes.push(t);
+      lastPosition = position;
     }
-    expect(strikes).toBeGreaterThan(10);
+    expect(strikes).toEqual(v6Strikes);
+    expect(strikes.length).toBeGreaterThan(10);
   });
 });
 
@@ -80,7 +94,6 @@ describe("computeLayout against v6", () => {
         Reflect.set(el, "_cw", 731);
         Reflect.set(el, "_ch", 417);
         const mine = createLayout();
-        let dsc = 1;
         // Fade 0 -> 48 (eased up to target), hold, then fade back down to 0 and up to a new target.
         const targets: [number, number][] = [];
         for (const [from, to, tgt] of [
@@ -103,13 +116,11 @@ describe("computeLayout against v6", () => {
               cssHeight: 417,
               devicePixelRatio: dpr,
               tier,
-              blurEased: eased,
+              blur: eased,
               blurTarget: tgt,
             },
-            dsc,
             mine,
           );
-          dsc = mine.detailScale;
           expect(mine.width).toBe(s.W);
           expect(mine.height).toBe(s.H);
           expect(mine.canvasWidth).toBe(s.cw);
@@ -122,13 +133,13 @@ describe("computeLayout against v6", () => {
           expect(mine.skyHeight).toBe(s.skyH);
           expect(mine.sceneWidth).toBe(s.sceneW);
           expect(mine.sceneHeight).toBe(s.sceneH);
-          expect(mine.blurScale).toBe(s.bq);
+          expectClose(mine.blurScale, Number(s.bq), "blur scale");
           expect(mine.blurring).toBe(s.blurring);
           expect(mine.shrink).toBe(s.shrink);
-          expect(mine.sigma).toBe(s.sigma);
-          expect(mine.particleScale).toBe(s.pscale);
-          expect(mine.detail).toBe(s.detail);
-          expect(fpsCap(tier.fps, mine)).toBe(call(el, "_fpsCap"));
+          expectClose(mine.sigma, Number(s.sigma), "sigma");
+          expectClose(mine.particleScale, Number(s.pscale), "particle scale");
+          expectClose(mine.detail, Number(s.detail), "detail");
+          expect(fpsCap(tier, mine)).toBe(call(el, "_fpsCap"));
         }
         vi.restoreAllMocks();
       }

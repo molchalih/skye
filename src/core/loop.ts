@@ -1,33 +1,42 @@
+import type { FrameTime } from "./frame-state.ts";
+
+/** The first frame after a wake or a restart, and every static frame, advance the animation by this much. */
+export const FIRST_DT_S: number = 1 / 60;
+/** The most one frame advances the animation by, so a stall or a hidden tab does not jump the sky ahead. */
+export const MAX_DT_S = 0.1;
+
 /** What a `FrameLoop` drives. The sky implements it; every method is called from inside a frame. */
 export interface LoopClient {
   /** Whether a frame may be drawn now. When false the loop goes idle until woken. */
   canDraw(): boolean;
-  /** Static frames: each wake draws one frame and the loop goes idle again. */
+  /** Static frames: each wake draws one frame, repeats it on the next display frame, and the loop goes idle again. */
   isStatic(): boolean;
   /** The current frame-rate cap. */
   fpsCap(): number;
   /**
-   * Draws one frame at loop time `t`, advancing the animation by `dt`, both in
-   * seconds. `dt` is v6's: 1/60 for static frames and for the first animated
-   * frame after a restart, else the time since the last animated frame, at
-   * most 0.1 s. Static frames leave that interval untouched.
+   * Draws one frame at loop time `time.seconds`, advancing the animation by
+   * `time.dt`, both in seconds: `FIRST_DT_S` for static frames and for the
+   * first animated frame after a restart, 0 for a static frame's repeat, else
+   * the time since the last animated frame, at most `MAX_DT_S`. Static frames
+   * leave that interval untouched. The object is the loop's, rewritten every frame.
    */
-  draw(t: number, dt: number): void;
-  /** Runs after each animated frame with its interval in ms and the cap it was paced at. */
-  paced(dtMs: number, fpsCap: number): void;
+  draw(time: Readonly<FrameTime>): void;
+  /** Runs after each animated frame, with its time and the cap it was paced at. */
+  paced(time: Readonly<FrameTime>, fpsCap: number): void;
 }
 
 /**
- * v6's frame loop (`_loop`): one frame per display refresh, skipped while the
+ * The sky's own frame loop: one frame per display refresh, skipped while the
  * fps cap says it is too early, plus the CPU-time and fps meters. Under a cap
- * it draws the frames v6 drew, the first at or past the cap's interval less
- * 2 ms, but judges each by a threshold halfway between display frames, so
- * timestamp jitter cannot move a frame across it. Frames come from the
- * global `requestAnimationFrame`, looked up at each request so a worker scope
+ * it draws the first display frame at or past the cap's interval less 2 ms,
+ * judged by a threshold halfway between display frames, so timestamp jitter
+ * cannot move a frame across it. Frames come from the global
+ * `requestAnimationFrame`, looked up at each request so a worker scope
  * without it falls back to a `setTimeout` pacer at the fps cap.
  *
  * Loop time is seconds since the loop's first frame, on the frame timestamps'
- * clock. It keeps counting while the loop is idle, as v6's did while hidden.
+ * clock. It keeps counting while the loop is idle, so a sky shown again
+ * resumes where its clock says rather than where it stopped.
  */
 export class FrameLoop {
   /** Frames drawn per second over the last full second; 0 until one has passed. */
@@ -35,6 +44,7 @@ export class FrameLoop {
   /** Smoothed CPU ms per animated frame; -1 until one is drawn. */
   cpuMs = -1;
   readonly #client: LoopClient;
+  readonly #time: FrameTime = { seconds: 0, dt: FIRST_DT_S, isStatic: false };
   #rafId: number | undefined;
   #timeoutId: ReturnType<typeof setTimeout> | undefined;
   #hasOrigin = false;
@@ -46,6 +56,8 @@ export class FrameLoop {
   #fpsStart = 0;
   /** The previous frame's timestamp. */
   #prevFrame = 0;
+  /** Whether the pending frame repeats the static frame before it rather than drawing a change. */
+  #repeat = false;
   /**
    * The display's frame interval in ms, smoothed over about 20 frames. It
    * assumes each interval spans a whole number of display frames. From 16 ms,
@@ -58,8 +70,9 @@ export class FrameLoop {
     this.#client = client;
   }
 
-  /** Requests a frame unless one is already pending. */
+  /** Requests a frame unless one is already pending. A wake is a change, so its static frame is repeated in turn. */
   wake(): void {
+    this.#repeat = false;
     if (this.#rafId === undefined && this.#timeoutId === undefined) this.#request();
   }
 
@@ -71,7 +84,7 @@ export class FrameLoop {
     this.#timeoutId = undefined;
   }
 
-  /** The next frame ignores the cap and reports an interval of 1/60 s, as after a v6 attribute change. */
+  /** The next frame ignores the cap and advances by `FIRST_DT_S`, as after a change of params. */
   restart(): void {
     this.#hasLast = false;
   }
@@ -101,9 +114,20 @@ export class FrameLoop {
       this.#origin = now;
       this.#hasOrigin = true;
     }
-    const t = (now - this.#origin) / 1000;
-    if (client.isStatic()) {
-      client.draw(t, 1 / 60);
+    const time = this.#time;
+    time.seconds = (now - this.#origin) / 1000;
+    time.isStatic = client.isStatic();
+    if (time.isStatic) {
+      // Some compositors present a canvas one frame late: WebKit GTK and WPE builds from late 2026 show a
+      // preserveDrawingBuffer:false, antialias:false canvas with the frame drawn before the last one, so a single
+      // draw would leave the previous frame, or a black one, on screen (nearest upstream report:
+      // https://bugs.webkit.org/show_bug.cgi?id=274527). Each static frame is therefore drawn again on the next
+      // display frame. The repeat advances nothing (a zero step: the easing jumps, the time is fixed and the wind
+      // stays put), so it is the same image, and it costs one frame's GPU time per change.
+      time.dt = this.#repeat ? 0 : FIRST_DT_S;
+      client.draw(time);
+      this.#repeat = !this.#repeat;
+      if (this.#repeat) this.#request();
       return;
     }
     this.#request();
@@ -115,11 +139,11 @@ export class FrameLoop {
     if (frameMs > 0)
       this.#period +=
         (frameMs / Math.max(1, Math.round(frameMs / this.#period)) - this.#period) * 0.05;
-    // v6 drew the first display frame at or past the cap's interval less 2 ms: a fixed threshold, which can sit a
-    // fraction of a millisecond from a frame (0.5 ms at 165 Hz under 20 fps), so that jitter moves frames across it.
-    // The same frame is drawn here, judged by a threshold halfway between it and the frame before: the whole frames
-    // that reach that time, less half a frame. A frame that arrives that long after the one before draws in any
-    // case, as when rAF or the timer runs no faster than the cap.
+    // The frame to draw is the first at or past the cap's interval less 2 ms. Compared with that fixed time, a frame
+    // can sit a fraction of a millisecond from it (0.5 ms at 165 Hz under 20 fps), so that jitter moves frames across
+    // it; it is judged instead by a threshold halfway between it and the frame before: the whole frames that reach
+    // that time, less half a frame. A frame that arrives that long after the one before draws in any case, as when
+    // rAF or the timer runs no faster than the cap.
     const due = 1000 / cap - 2;
     const frame = this.#period;
     if (
@@ -129,17 +153,16 @@ export class FrameLoop {
       now - this.#lastDrawn < (Math.ceil(due / frame) - 0.5) * frame
     )
       return;
-    const dt = this.#hasLast ? Math.min(0.1, (now - this.#lastDrawn) / 1000) : 1 / 60;
+    time.dt = this.#hasLast ? Math.min(MAX_DT_S, (now - this.#lastDrawn) / 1000) : FIRST_DT_S;
     this.#lastDrawn = now;
     this.#hasLast = true;
-    // The measured draw includes harvesting GPU timer results, which v6 did just after its measurement; the
-    // difference is a few query reads.
+    // The measured draw includes harvesting GPU timer results: a few query reads.
     const c0 = performance.now();
-    client.draw(t, dt);
+    client.draw(time);
     const cpu = performance.now() - c0;
     this.cpuMs = this.cpuMs < 0 ? cpu : this.cpuMs + (cpu - this.cpuMs) * 0.1;
     this.#countFrame(now);
-    client.paced(dt * 1000, cap);
+    client.paced(time, cap);
   }
 
   #countFrame(now: number): void {

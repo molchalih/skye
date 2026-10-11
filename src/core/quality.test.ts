@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { QualityController } from "./quality.ts";
+import { QualityController, type QualityChange } from "./quality.ts";
 
-function run(q: QualityController, frames: number, dt: number, cap: number, gpu: number): void {
-  for (let i = 0; i < frames; i++) q.observe(dt, cap, gpu);
+// One frame of `dtMs` paced at `cap`, with a smoothed GPU time of `gpu` ms (-1 without a timer).
+function observe(q: QualityController, dtMs: number, cap: number, gpu: number): QualityChange {
+  return q.observe({ seconds: 0, dt: dtMs / 1000, isStatic: false }, cap, { ms: gpu });
+}
+
+function run(q: QualityController, frames: number, dtMs: number, cap: number, gpu: number): void {
+  for (let i = 0; i < frames; i++) observe(q, dtMs, cap, gpu);
 }
 
 describe("QualityController", () => {
@@ -14,7 +19,7 @@ describe("QualityController", () => {
     const q = new QualityController();
     run(q, 60, 16, 60, 12);
     expect(q.tier).toBe(1);
-    const r = q.observe(16, 60, 12);
+    const r = observe(q, 16, 60, 12);
     expect(q.tier).toBe(0);
     expect(r).toEqual({ tier: 0, changed: true, resetGpu: true });
   });
@@ -34,7 +39,7 @@ describe("QualityController", () => {
     const q = new QualityController();
     run(q, 300, 16, 60, 2);
     expect(q.tier).toBe(1);
-    const r = q.observe(16, 60, 2);
+    const r = observe(q, 16, 60, 2);
     expect(q.tier).toBe(2);
     expect(r.resetGpu).toBe(true);
     run(q, 400, 16, 60, 0.5);
@@ -51,7 +56,7 @@ describe("QualityController", () => {
     const q = new QualityController();
     run(q, 90, 40, 60, -1);
     expect(q.tier).toBe(1);
-    const r = q.observe(40, 60, -1);
+    const r = observe(q, 40, 60, -1);
     expect(q.tier).toBe(0);
     expect(r).toEqual({ tier: 0, changed: true, resetGpu: false });
     run(q, 2000, 1, 60, -1);

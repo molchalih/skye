@@ -2,6 +2,7 @@ import { createReadStream, statSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { extname, join, normalize } from "node:path";
 import { chromium, firefox, webkit, type Browser, type BrowserType, type Page } from "playwright";
+import { rendersInWorkers, workerWebGL2 } from "../support/worker-webgl2.ts";
 
 /** The engines of the support floor, as the browser tests run them. */
 export const ENGINES: readonly BrowserType[] = [chromium, firefox, webkit];
@@ -77,6 +78,15 @@ export async function openPage(browser: Browser): Promise<{ page: Page; errors: 
     }
   });
   return { page, errors };
+}
+
+/**
+ * Whether the engine behind `page` gives a worker's OffscreenCanvas WebGL2 (test/support/worker-webgl2.ts). Where it
+ * does not, which only WebKit may, a `worker` element draws on the main thread instead.
+ */
+export async function rendersInWorkersOn(page: Page): Promise<boolean> {
+  const engine = page.context().browser()?.browserType().name() ?? "";
+  return rendersInWorkers(engine, await page.evaluate(workerWebGL2));
 }
 
 export interface Drawn {

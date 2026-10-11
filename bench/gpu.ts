@@ -11,7 +11,7 @@ import { createSky, type Sky } from "../src/index.ts";
 import { CONTEXT_ATTRIBUTES } from "../src/gl/context.ts";
 import { toAttributes } from "../src/element/attributes.ts";
 import { defineSkye } from "../src/element/define.ts";
-import { MAX_DIFF, MIN_CLOSE } from "../test/parity/compare.ts";
+import { compareToApproved, type Limits } from "../test/look/compare.ts";
 import { CALL_GROUPS, GlProbe, type FrameRecord, type SegmentCount } from "./gl-probe.ts";
 import type {
   CallCounts,
@@ -22,7 +22,7 @@ import type {
   GpuBenchApi,
   Marginal,
   Paced,
-  Parity,
+  LookCheck,
   PassCost,
   Passes,
   Prepared,
@@ -543,43 +543,34 @@ async function decodePng(
   return { pixels: new Uint8Array(data.buffer), width: bitmap.width, height: bitmap.height };
 }
 
-/** The parity gate's tolerance: 99.9 % of channels within 1/255, none beyond 4/255. */
-function compareImages(
-  base: { pixels: Uint8Array; width: number; height: number },
-  cand: { pixels: Uint8Array; width: number; height: number },
-): Parity {
-  if (base.width !== cand.width || base.height !== cand.height) {
-    return { pass: false, closePercent: 0, maxDiff: 255, worst: null };
-  }
-  let close = 0;
-  let worstIndex = -1;
-  let maxDiff = 0;
-  const a = base.pixels;
-  const b = cand.pixels;
-  for (let i = 0; i < a.length; i++) {
-    const d = Math.abs((a[i] ?? 0) - (b[i] ?? 0));
-    if (d <= 1) close++;
-    if (d > maxDiff) {
-      maxDiff = d;
-      worstIndex = i;
-    }
-  }
-  const share = close / a.length;
-  const px = Math.floor(worstIndex / 4);
+interface Image {
+  pixels: Uint8Array;
+  width: number;
+  height: number;
+}
+
+/** The largest difference of any channel, or 255 when the sizes differ. */
+function maxDiff(a: Image, b: Image): number {
+  if (a.width !== b.width || a.height !== b.height) return 255;
+  let max = 0;
+  for (let i = 0; i < a.pixels.length; i++)
+    max = Math.max(max, Math.abs((a.pixels[i] ?? 0) - (b.pixels[i] ?? 0)));
+  return max;
+}
+
+/** `candidate` against the baseline's frame under the look gate's limits. */
+function lookCheck(base: Image, candidate: Image): LookCheck {
+  if (base.width !== candidate.width || base.height !== candidate.height)
+    return { pass: false, frame: -1, region: -1, block: -1, detail: -1 };
+  const verdict = compareToApproved(base.pixels, candidate.pixels, base.width, base.height);
+  const value = (key: keyof Limits): number =>
+    verdict.measures.find((m) => m.key === key)?.value ?? Number.NaN;
   return {
-    pass: share >= MIN_CLOSE && maxDiff <= MAX_DIFF,
-    closePercent: share * 100,
-    maxDiff,
-    worst:
-      worstIndex < 0
-        ? null
-        : {
-            x: px % base.width,
-            y: Math.floor(px / base.width),
-            channel: worstIndex % 4,
-            baseline: a[worstIndex] ?? 0,
-            candidate: b[worstIndex] ?? 0,
-          },
+    pass: verdict.pass,
+    frame: value("frame"),
+    region: value("region"),
+    block: value("block"),
+    detail: value("detail"),
   };
 }
 
@@ -589,16 +580,15 @@ async function reference(frames: number, baselinePng: string | null): Promise<Re
   const second = await referenceFrame(input, frames);
   const png = await encodePng(first.pixels, first.width, first.height);
   // The PNG must decode back to the exact bytes, or a later comparison would measure the codec.
-  const roundTrip = compareImages(first, await decodePng(png));
-  if (roundTrip.maxDiff !== 0) throw new Error("PNG round trip changed pixels");
+  if (maxDiff(first, await decodePng(png)) !== 0) throw new Error("PNG round trip changed pixels");
   return {
     width: first.width,
     height: first.height,
     time: (frames - 1) * STEP_S,
     frames,
     png,
-    deterministic: compareImages(first, second).maxDiff === 0,
-    parity: baselinePng === null ? null : compareImages(await decodePng(baselinePng), first),
+    deterministic: maxDiff(first, second) === 0,
+    look: baselinePng === null ? null : lookCheck(await decodePng(baselinePng), first),
   };
 }
 

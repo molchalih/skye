@@ -3,5 +3,7 @@ dist/
 bun.lock
 *.tsbuildinfo
 test/reference/weather-sky-v6.js
+test/reference/skye-approved.*
+test/reference/skye-baseline-*
 .changeset/
 CHANGELOG.md

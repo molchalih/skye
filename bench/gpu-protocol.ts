@@ -202,12 +202,20 @@ export interface StateCounters {
   worker: boolean;
 }
 
-export interface Parity {
+/**
+ * A frame against the baseline's, under the look gate's limits
+ * (test/look/compare.ts), in OKLab × 100; each -1 when the sizes differ.
+ */
+export interface LookCheck {
   pass: boolean;
-  closePercent: number;
-  maxDiff: number;
-  /** Worst channel, top-left origin. */
-  worst: { x: number; y: number; channel: number; baseline: number; candidate: number } | null;
+  /** Distance between the mean colours of the two frames. */
+  frame: number;
+  /** Largest distance between the mean colours of a region of a 16 × 16 grid. */
+  region: number;
+  /** 99th percentile of the distances between 2 × 2 blocks. */
+  block: number;
+  /** Largest relative change in fine detail of a region of an 8 × 8 grid. */
+  detail: number;
 }
 
 export interface Reference {
@@ -221,7 +229,7 @@ export interface Reference {
   /** Two fresh skies drew bit-identical frames. */
   deterministic: boolean;
   /** Against the baseline's frame, when one was given. */
-  parity: Parity | null;
+  look: LookCheck | null;
 }
 
 /** The functions `gpu.ts` puts on `window` for the runner. */

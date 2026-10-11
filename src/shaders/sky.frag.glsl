@@ -1,4 +1,4 @@
-// Pass 1: soft sky at reduced resolution. Alpha is cloud transmittance times fog/tint attenuation, read by the composite pass.
+// The sky: soft sky at reduced resolution. Alpha is cloud transmittance times fog/tint attenuation, read by the composite pass.
 #version 300 es
 precision highp float;
 uniform vec2 uRes, uSunPos, uMoonPos, uLPos, uFlashPos, uASun, uBoltPos;

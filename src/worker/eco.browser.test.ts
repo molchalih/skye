@@ -1,8 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { server } from "vitest/browser";
 import { mount, nextEvent, unmountAll, until } from "../../test/support/element.ts";
+import { rendersInWorkers, workerWebGL2 } from "../../test/support/worker-webgl2.ts";
 import { SKYE_READY, SKYE_TIERCHANGE, defineSkye } from "../element/index.ts";
 
 defineSkye();
+
+// Without WebGL2 in workers the sky falls back to the main thread, which must draw eco the same way.
+const WORKER_WEBGL2 = rendersInWorkers(server.browser, await workerWebGL2());
 
 afterEach(() => {
   unmountAll();
@@ -18,7 +23,7 @@ describe("the eco tier in a worker", () => {
     await nextEvent(el, SKYE_READY);
     await until(() => (el.stats()?.passes ?? 0) > 0, "a drawn eco frame");
     expect(el.stats()).toMatchObject({
-      worker: true,
+      worker: WORKER_WEBGL2,
       quality: "eco",
       auto: false,
       tier: 1,
